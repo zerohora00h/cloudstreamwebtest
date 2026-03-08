@@ -1,0 +1,44 @@
+/* Custom overrides for DaisyUI/Tailwind */
+
+body {
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+}
+
+/* Scrollbar styling for a premium feel */
+::-webkit-scrollbar {
+    width: 8px;
+    height: 8px;
+}
+
+::-webkit-scrollbar-track {
+    background: theme('colors.base-200');
+}
+
+::-webkit-scrollbar-thumb {
+    background: theme('colors.primary');
+    border-radius: 4px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+    background: theme('colors.primary-focus');
+}
+
+/* Modal Content Scrollbar */
+#modal-content::-webkit-scrollbar {
+    width: 6px;
+}
+#modal-content::-webkit-scrollbar-track {
+    background: transparent;
+}
+#modal-content::-webkit-scrollbar-thumb {
+    background: rgba(255, 255, 255, 0.2);
+    border-radius: 4px;
+}
+
+.line-clamp-2 {
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;  
+    overflow: hidden;
+}
