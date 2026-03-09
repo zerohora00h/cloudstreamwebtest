@@ -20,6 +20,9 @@ module.exports = {
   description: 'Extensão JS traduzida do plugin Kotlin',
   version: '1.0.0',
 
+  /**
+   * Fetches content for the home screen by iterating through predefined genres.
+   */
   async getHome() {
     const homeData = [];
     for (const genre of homeGenres) {
@@ -48,6 +51,9 @@ module.exports = {
     return homeData;
   },
 
+  /**
+   * Performs a search on the website and parses the results.
+   */
   async search(query) {
     const url = `${mainUrl}/search.php?q=${encodeURIComponent(query)}`;
     const res = await axios.get(url, { headers });
@@ -88,6 +94,9 @@ module.exports = {
     return results;
   },
 
+  /**
+   * Loads the details of a specific movie or series, including episodes if applicable.
+   */
   async load(url) {
     const res = await axios.get(url, { headers });
     const $ = cheerio.load(res.data);
@@ -167,6 +176,9 @@ module.exports = {
     }
   },
 
+  /**
+   * Extracts the actual streaming links (video URLs) from the provided data.
+   */
   async loadLinks(data) {
     let episodeUrl = data.startsWith('[') ? data.replace(/^\["?|"?\]$/g, '').split('|').pop() : data;
 

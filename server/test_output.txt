@@ -1,0 +1,20 @@
+
+­ƒöì Testando URL: https://bysebuho.com/e/wgythjukoumu
+--------------------------------------------------
+[Extractor] Loaded: Byse
+[Extractor] Loaded: DoodStream
+[Extractor] Loaded: FileMoon
+[Extractor] Loaded: MixDrop
+[Extractor] Loaded: StreamTape
+[Byse] KeyParts raw: [ 'Gp1N69uEKk4FEz0JpqulqA', 'E4IjxasqTFArc8mS345bhg' ]
+Ô£à Sucesso! Links encontrados:
+[
+  {
+    "name": "Byse",
+    "url": "https://edge1-waw-sprintcdn.r66nv9ed.com/hls2/03/10916/wgythjukoumu_o/master.m3u8?t=muFIM5__xyg89vQ17K_T7P8DyyECa7J9Of1BbXp09TQ&s=1773022854&e=10800&f=54581239&srv=1050&asn=262663&sp=4000&p=0",
+    "quality": "Auto",
+    "referer": "https://bysebuho.com"
+  }
+]
+--------------------------------------------------
+
