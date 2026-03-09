@@ -1,7 +1,7 @@
 {
   "id": "pobreflix",
   "name": "PobreFlix",
-  "description": "Extensão JS traduzida do plugin Kotlin PobreFlix",
+  "description": "Extensão traduzida do plugin Kotlin PobreFlix",
   "version": "1.0.0",
-  "main": "index.js"
+  "main": "index.ts"
 }

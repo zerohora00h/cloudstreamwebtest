@@ -1,12 +1,11 @@
-const axios = require('axios');
-const cheerio = require('cheerio');
+import { createPlugin } from '@plugin-api';
+import type { HomeSection, MediaDetails, MediaItem, StreamLink } from '@shared/types';
 
 const mainUrl = 'https://cnvsweb.stream';
 
-// Fixed internal ID from Kotlin source
 const INTERNAL_DRM_ID = "pygrp_KJp_cyHo0.lbp-kBz.mo52lYEgGDK1tDG9tb_9GXI_";
 
-function getAppConfigToken() {
+function getAppConfigToken(): string {
   const os = 5;
   const stdArr = [60, 61, 62, 63, 64, 65, 66, 67, 68, 69, 70, 71, 72, 73, 74, 75, 76, 77, 78, 79, 80, 81, 82, 83, 84, 85, 92, 93, 94, 95, 96, 97, 98, 99, 100, 101, 102, 103, 104, 105, 106, 107, 108, 109, 110, 111, 112, 113, 114, 115, 116, 117, 43, 44, 45, 46, 47, 48, 49, 50, 51, 52, 38, 42];
   const std = stdArr.map(c => String.fromCharCode(c + os)).join("");
@@ -16,8 +15,8 @@ function getAppConfigToken() {
   const tp = tpArr.map(c => String.fromCharCode(c + op)).join("");
 
   let sb = "";
-  for (let c of INTERNAL_DRM_ID) {
-    let i = tp.indexOf(c);
+  for (const c of INTERNAL_DRM_ID) {
+    const i = tp.indexOf(c);
     if (i !== -1 && i < std.length) {
       sb += std[i];
     } else {
@@ -46,18 +45,15 @@ const homeGenres = [
   { name: 'Séries Netflix', id: '73' }
 ];
 
-module.exports = {
-  /**
-   * Fetches content for the home screen by iterating through predefined genres.
-   */
-  async getHome() {
-    const homeData = [];
+export default createPlugin((api) => ({
+  async getHome(): Promise<HomeSection[]> {
+    const homeData: HomeSection[] = [];
     for (const genre of homeGenres) {
       try {
         const url = `${mainUrl}/ajax/genre.php?genre=${genre.id}&page=1`;
-        const res = await axios.get(url, { headers: getHeaders() });
+        const res = await api.request.get(url, { headers: getHeaders() });
 
-        const list = (res.data || []).map(item => {
+        const list: MediaItem[] = (res.data || []).map((item: any) => {
           const isSeries = item.time?.toLowerCase().includes('temporadas');
           return {
             name: item.title?.replace(/[\n\r]+/g, ' ').trim() || '',
@@ -68,26 +64,24 @@ module.exports = {
             score: parseFloat(item.imdb_rating) || null
           };
         });
+
         if (list.length > 0) {
           homeData.push({ name: genre.name, list });
         }
-      } catch (err) {
+      } catch (err: any) {
         console.error(`Erro ao buscar gênero ${genre.name}:`, err.message);
       }
     }
     return homeData;
   },
 
-  /**
-   * Performs a search on the website and parses the results.
-   */
-  async search(query) {
+  async search(query: string): Promise<MediaItem[]> {
     const url = `${mainUrl}/search.php?q=${encodeURIComponent(query)}`;
-    const res = await axios.get(url, { headers: getHeaders() });
-    const $ = cheerio.load(res.data);
-    const results = [];
+    const res = await api.request.get(url, { headers: getHeaders() });
+    const $ = api.html.parse(res.data);
+    const results: MediaItem[] = [];
 
-    $('section.listContent .item.poster').each((i, el) => {
+    $('section.listContent .item.poster').each((_i, el) => {
       const a = $(el).find('a.btn.free, a.btn.free.fw-bold').first();
       const href = a.attr('href');
       if (!href) return;
@@ -100,33 +94,23 @@ module.exports = {
       let img = match ? match[1] : '';
       img = img.replace('/w300/', '/original/');
 
-      const scoreText = $(el).find('span').filter((i, e) => $(e).text().includes('IMDb')).text();
+      const scoreText = $(el).find('span').filter((_i, e) => $(e).text().includes('IMDb')).text();
       const score = parseFloat(scoreText.replace('IMDb', '').trim()) || null;
 
       const tags = $(el).find('.tags').first().text() || '';
       const yearMatch = tags.match(/\d{4}/);
       const year = yearMatch ? parseInt(yearMatch[0]) : null;
-      const type = (tags.toLowerCase().includes('temporada')) ? 'TvSeries' : 'Movie';
+      const type = tags.toLowerCase().includes('temporada') ? 'TvSeries' : 'Movie';
 
-      results.push({
-        name: title,
-        url: href,
-        type,
-        posterUrl: img,
-        year,
-        score
-      });
+      results.push({ name: title, url: href, type, posterUrl: img, year, score });
     });
 
     return results;
   },
 
-  /**
-   * Loads the details of a specific movie or series, including episodes if applicable.
-   */
-  async load(url) {
-    const res = await axios.get(url, { headers: getHeaders() });
-    const $ = cheerio.load(res.data);
+  async load(url: string): Promise<MediaDetails> {
+    const res = await api.request.get(url, { headers: getHeaders() });
+    const $ = api.html.parse(res.data);
 
     const name = $('h1.fw-bolder').first().text().replace(/[\n\r]+/g, ' ').trim();
     const plot = $('p.small.linefive').first().text().trim();
@@ -137,26 +121,26 @@ module.exports = {
     const posterMatch = posterStyle.match(/url\('(.+?)'\)/);
     const posterUrl = posterMatch ? posterMatch[1].replace('/w300/', '/original/') : '';
 
-    const tags = [];
-    $('.producerInfo p.lineone').each((i, el) => {
+    const tags: string[] = [];
+    $('.producerInfo p.lineone').each((_i, el) => {
       if ($(el).find('span').first().text().toLowerCase().includes('gênero')) {
-        $(el).find('span span').each((j, span) => {
+        $(el).find('span span').each((_j, span) => {
           tags.push($(span).text().trim());
         });
       }
     });
 
-    const scoreText = $('span').filter((i, e) => $(e).text().includes('IMDb')).text();
+    const scoreText = $('span').filter((_i, e) => $(e).text().includes('IMDb')).text();
     const score = parseFloat(scoreText.replace('IMDb', '').trim()) || null;
 
-    const durationText = $('span').filter((i, e) => $(e).text().toLowerCase().includes('min')).text();
+    const durationText = $('span').filter((_i, e) => $(e).text().toLowerCase().includes('min')).text();
     const duration = parseInt(durationText.toLowerCase().replace('min', '').trim()) || null;
 
     const isSerie = url.includes('/series') || $('#seasons-view').length > 0;
 
     if (isSerie) {
-      const episodes = [];
-      const seasons = $('#seasons-view option').map((i, el) => $(el).attr('value')).get();
+      const episodes: { name: string; episode: number; season: number; data: string }[] = [];
+      const seasons = $('#seasons-view option').map((_i, el) => $(el).attr('value')).get();
 
       for (let i = 0; i < seasons.length; i++) {
         const seasonId = seasons[i];
@@ -164,86 +148,117 @@ module.exports = {
 
         try {
           const epUrl = `${mainUrl}/ajax/episodes.php?season=${seasonId}&page=1`;
-          const epRes = await axios.get(epUrl, { headers: { ...getHeaders(), Referer: url } });
-          const $ep = cheerio.load(epRes.data);
+          const epRes = await api.request.get(epUrl, { headers: { ...getHeaders(), Referer: url } });
+          const $ep = api.html.parse(epRes.data);
 
-          $ep('div.ep').each((j, el) => {
+          $ep('div.ep').each((_j, el) => {
             const epNumText = $ep(el).find('p[number]').attr('number') || $ep(el).find('p[number]').text();
-            const epNum = parseInt(epNumText) || Number(epNumText) || 0;
+            const epNum = parseInt(epNumText || '') || 0;
             const epName = $ep(el).find('h5.fw-bold').text().replace(/[\n\r]+/g, ' ').trim() || `Episódio ${epNum}`;
             const playBtn = $ep(el).find('a.btn.free.fw-bold, a.btn.free').first();
             const episodeUrl = playBtn.attr('href');
 
             if (episodeUrl) {
-              episodes.push({
-                name: epName,
-                episode: epNum,
-                season: seasonNumber,
-                data: episodeUrl
-              });
+              episodes.push({ name: epName, episode: epNum, season: seasonNumber, data: episodeUrl });
             }
           });
-        } catch (e) { console.error('Erro ao buscar temporada:', e.message) }
+        } catch (e: any) {
+          console.error('Erro ao buscar temporada:', e.message);
+        }
       }
 
-      return {
-        name, url, type: 'TvSeries', posterUrl, plot, year, tags, score, duration, episodes
-      }
+      return { name, url, type: 'TvSeries', posterUrl, plot, year, tags, score, duration, episodes };
     } else {
       const watchBtn = $('div.buttons a.btn.free[href*="/m/"]').first();
-      let watchUrl = watchBtn.attr('href');
+      const watchUrl = watchBtn.attr('href');
       let dataUrl = url;
       if (watchUrl) {
         dataUrl = watchUrl.startsWith('http') ? watchUrl : `http://www.playcnvs.stream${watchUrl}`;
       }
 
-      return {
-        name, url, type: 'Movie', posterUrl, plot, year, tags, score, duration, dataUrl
-      }
+      return { name, url, type: 'Movie', posterUrl, plot, year, tags, score, duration, dataUrl };
     }
   },
 
-  /**
-   * Extracts the actual streaming links (video URLs) from the provided data.
-   */
-  async loadLinks(data) {
-    let episodeUrl = data.startsWith('[') ? data.replace(/^\["?|"?\]$/g, '').split('|').pop() : data;
+  async loadLinks(data: string): Promise<StreamLink[]> {
+    const episodeUrl = data.startsWith('[') ? data.replace(/^\["?|"?\]$/g, '').split('|').pop()! : data;
 
     try {
-      const res = await axios.get(episodeUrl, { headers: getHeaders() });
-      const html = res.data;
-      const $ = cheerio.load(html);
+      const baseHeaders = getHeaders();
+      const res = await api.request.get(episodeUrl, { headers: baseHeaders });
+      const $ = api.html.parse(res.data);
+      const sourceUrls: { name: string; url: string }[] = [];
 
-      const sources = [];
-
-      $('.sources-dropdown .dropdown-menu a.source-btn').each((i, el) => {
+      // 1. Pega as URLs dos players disponíveis
+      $('.sources-dropdown .dropdown-menu a.source-btn').each((_i, el) => {
         const href = $(el).attr('href');
         let tagTxt = $(el).clone().children().remove().end().text().trim();
         if (!tagTxt) tagTxt = $(el).text().replace($(el).find('label').text(), '').trim();
 
         const badge = $(el).find('label.badge').text().trim();
-        const name = badge ? `${tagTxt} (${badge})` : tagTxt;
+        const linkName = badge ? `${tagTxt} (${badge})` : tagTxt;
 
         if (href && !href.startsWith('#')) {
           const abs = href.startsWith('http') ? href : `http://www.playcnvs.stream${href}`;
-          sources.push({ name, url: abs });
+          sourceUrls.push({ name: linkName, url: abs });
         }
       });
 
-      if (sources.length === 0) {
-        $('a.btn.free').each((i, el) => {
+      if (sourceUrls.length === 0) {
+        $('a.btn.free').each((_i, el) => {
           const href = $(el).attr('href');
           if (href && (href.includes('/s/') || href.includes('/m/')) && !href.includes('history.go')) {
             const abs = href.startsWith('http') ? href : `http://www.playcnvs.stream${href}`;
-            sources.push({ name: $(el).text().trim(), url: abs });
+            sourceUrls.push({ name: $(el).text().trim(), url: abs });
           }
         });
       }
 
-      return sources;
-    } catch (e) {
+      const sortedSources = sourceUrls.sort((a, b) => b.name.toLowerCase().includes('4k') ? 1 : -1);
+      const finalLinks: StreamLink[] = [];
+
+      // Regex corrigido
+      const patterns = [
+        /initializePlayerWithSubtitle\(['"]([^'"]*\.(?:mp4|m3u8)[^'"]*)['"],\s*['"]([^'"]*\.srt[^'"]*)['"]/,
+        /initializePlayer\(['"]([^'"]*\.(?:mp4|m3u8)[^'"]*)['"]/,
+        /file:\s*['"]([^'"]*\.(?:mp4|m3u8)[^'"]*)['"]/,
+        /src:\s*['"]([^'"]*\.(?:mp4|m3u8)[^'"]*)['"]/,
+        /["']?file["']?\s*:\s*["']([^"']+)["']/,
+        /["']?url["']?\s*:\s*["']([^"']+)["']/
+      ];
+
+      // 2. Extrai o link de vídeo real de cada source resolvido
+      for (const source of sortedSources) {
+        try {
+          const pRes = await api.request.get(source.url, {
+            // Referer correto para evitar block 403
+            headers: { ...baseHeaders, 'Referer': episodeUrl }
+          });
+
+          const $p = api.html.parse(pRes.data);
+          const scripts = $p('script').map((_i, el) => $p(el).text()).get().join('\n');
+
+          for (const pat of patterns) {
+            const match = scripts.match(pat);
+            if (match) {
+              const videoUrl = match[1].replace(/\\\//g, '/');
+              finalLinks.push({
+                name: `VisionCine - ${source.name}`,
+                url: videoUrl,
+                quality: 'Auto'
+              });
+              break;
+            }
+          }
+        } catch (e: any) {
+          console.error(`Erro ao extrair ${source.name}:`, e.message);
+        }
+      }
+
+      return finalLinks;
+    } catch (e: any) {
       console.error('Error fetching links', e.message);
       return [];
     }
   }
-};
+}));

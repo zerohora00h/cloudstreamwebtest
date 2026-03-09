@@ -121,7 +121,8 @@ export class PluginRegistry {
         }
 
         delete require.cache[require.resolve(mainPath)];
-        const raw = require(mainPath);
+        const mod = require(mainPath);
+        const raw = mod.default || mod;
 
         // Merge manifest data with plugin logic
         const pluginData = {

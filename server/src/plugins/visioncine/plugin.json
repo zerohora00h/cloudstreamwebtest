@@ -1,7 +1,7 @@
 {
   "id": "visioncine",
   "name": "VisionCine",
-  "description": "Extensão JS traduzida do plugin Kotlin",
+  "description": "Extensão traduzida do plugin Kotlin VisionCine",
   "version": "1.0.0",
-  "main": "index.js"
+  "main": "index.ts"
 }

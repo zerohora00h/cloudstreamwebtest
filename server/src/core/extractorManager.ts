@@ -29,13 +29,14 @@ export class ExtractorManager {
       return;
     }
 
-    const files = fs.readdirSync(dir).filter(f => f.endsWith('.js'));
+    const files = fs.readdirSync(dir).filter(f => f.endsWith('.js') || f.endsWith('.ts'));
     for (const file of files) {
       try {
         const fullPath = path.resolve(path.join(dir, file));
         // Use require on the absolute path
         delete require.cache[require.resolve(fullPath)];
-        const extractor = require(fullPath);
+        const mod = require(fullPath);
+        const extractor = mod.default || mod;
 
         if (!extractor.name || !extractor.domains) {
           console.warn(`[Extractor] Skipped ${file}: missing 'name' or 'domains'`);
