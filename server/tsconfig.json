@@ -19,6 +19,12 @@
     "paths": {
       "@shared/*": [
         "../shared/*"
+      ],
+      "@plugin-api": [
+        "src/core/plugin-api/api"
+      ],
+      "@plugin-api/types": [
+        "src/core/plugin-api/types"
       ]
     }
   },
@@ -29,7 +35,7 @@
   "exclude": [
     "node_modules",
     "dist",
-    "src/plugins",
+    "src/plugins/legacy",
     "src/extractors"
   ]
 }

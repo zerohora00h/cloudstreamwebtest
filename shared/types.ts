@@ -65,6 +65,7 @@ export interface PluginAPI {
   name: string;
   description: string;
   version: string;
+  extractors?: ExtractorAPI[];
   getHome(): Promise<HomeSection[]>;
   search(query: string): Promise<MediaItem[]>;
   load(url: string): Promise<MediaDetails>;

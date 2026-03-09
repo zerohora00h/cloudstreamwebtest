@@ -96,7 +96,29 @@ pluginRoutes.post('/plugins/:id/links', async (req: Request, res: Response) => {
       if (!link.url) { finalLinks.push(link); continue; }
 
       console.log(`[Extractor] Trying: ${link.url}`);
-      const extracted = await ExtractorManager.extract(link.url);
+
+      // 1. Try local plugin extractors first (scoped to this plugin)
+      let extracted = null;
+      if (plugin.extractors && plugin.extractors.length > 0) {
+        for (const extractor of plugin.extractors) {
+          if (extractor.domains.some(d => link.url.includes(d))) {
+            try {
+              extracted = await extractor.extract(link.url);
+              if (extracted && extracted.length > 0) {
+                console.log(`[Extractor] Local extractor "${extractor.name}" matched for plugin "${plugin.id}"`);
+                break;
+              }
+            } catch (e: any) {
+              console.error(`[Extractor] Local ${extractor.name} error:`, e.message);
+            }
+          }
+        }
+      }
+
+      // 2. Fallback to global ExtractorManager
+      if (!extracted || extracted.length === 0) {
+        extracted = await ExtractorManager.extract(link.url);
+      }
 
       if (extracted && extracted.length > 0) {
         for (const e of extracted) {
