@@ -16,23 +16,41 @@ export class ExtractorManager {
     if (this.loaded) return;
 
     const dir = path.join(__dirname, '..', 'extractors');
+    this.loadFromDir(dir);
+    this.loaded = true;
+  }
+
+  static loadFromDir(dir: string): void {
     if (!fs.existsSync(dir)) {
-      fs.mkdirSync(dir, { recursive: true });
-      this.loaded = true;
+      if (dir.endsWith('extractors') && !dir.includes('plugins')) {
+        fs.mkdirSync(dir, { recursive: true });
+        console.log(`[Extractor] Directory created: ${dir}`);
+      }
       return;
     }
 
     const files = fs.readdirSync(dir).filter(f => f.endsWith('.js'));
     for (const file of files) {
       try {
-        const extractor = require(path.join(dir, file));
-        this.extractors.push(extractor);
-        console.log(`[Extractor] Loaded: ${extractor.name}`);
+        const fullPath = path.resolve(path.join(dir, file));
+        // Use require on the absolute path
+        delete require.cache[require.resolve(fullPath)];
+        const extractor = require(fullPath);
+
+        if (!extractor.name || !extractor.domains) {
+          console.warn(`[Extractor] Skipped ${file}: missing 'name' or 'domains'`);
+          continue;
+        }
+
+        // Avoid duplicate extractors by name
+        if (!this.extractors.some(e => e.name === extractor.name)) {
+          this.extractors.push(extractor);
+          console.log(`[Extractor] Loaded: ${extractor.name}`);
+        }
       } catch (e: any) {
-        console.error(`[Extractor] Error loading ${file}:`, e.message);
+        console.error(`[Extractor] Error loading ${file} from ${dir}:`, e.message);
       }
     }
-    this.loaded = true;
   }
 
   static async extract(url: string): Promise<StreamLink[] | null> {

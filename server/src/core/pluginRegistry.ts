@@ -98,24 +98,53 @@ export class PluginRegistry {
       return;
     }
 
-    const files = fs.readdirSync(pluginsDir).filter(f => f.endsWith('.js'));
+    const entries = fs.readdirSync(pluginsDir, { withFileTypes: true });
 
-    for (const file of files) {
+    for (const entry of entries) {
+      if (!entry.isDirectory()) continue;
+
+      const pluginPath = path.join(pluginsDir, entry.name);
+      const manifestPath = path.join(pluginPath, 'plugin.json');
+
+      if (!fs.existsSync(manifestPath)) {
+        continue;
+      }
+
       try {
-        const fullPath = path.join(pluginsDir, file);
-        delete require.cache[require.resolve(fullPath)];
-        const raw = require(fullPath);
+        const manifest = JSON.parse(fs.readFileSync(manifestPath, 'utf8'));
+        const mainFile = manifest.main || 'index.js';
+        const mainPath = path.join(pluginPath, mainFile);
 
-        if (!raw.id || !raw.name) {
-          console.warn(`[Plugin] Skipped ${file}: missing 'id' or 'name'`);
+        if (!fs.existsSync(mainPath)) {
+          console.warn(`[Plugin] Main file not found for ${entry.name}: ${mainFile}`);
           continue;
         }
 
-        const plugin = wrapPlugin(raw);
+        delete require.cache[require.resolve(mainPath)];
+        const raw = require(mainPath);
+
+        // Merge manifest data with plugin logic
+        const pluginData = {
+          ...raw,
+          id: manifest.id,
+          name: manifest.name,
+          description: manifest.description,
+          version: manifest.version
+        };
+
+        const plugin = wrapPlugin(pluginData);
         this.plugins.set(plugin.id, plugin);
+
+        // Load local extractors if they exist
+        const localExtractorsDir = path.join(pluginPath, 'extractors');
+        if (fs.existsSync(localExtractorsDir)) {
+          const { ExtractorManager } = require('./extractorManager');
+          ExtractorManager.loadFromDir(localExtractorsDir);
+        }
+
         console.log(`[Plugin] Loaded: ${plugin.name} (${plugin.id})`);
       } catch (err: any) {
-        console.error(`[Plugin] Error loading ${file}:`, err.message);
+        console.error(`[Plugin] Error loading ${entry.name}:`, err.message);
       }
     }
   }
