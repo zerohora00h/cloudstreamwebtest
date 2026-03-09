@@ -55,6 +55,7 @@ export interface StreamLink {
   name: string;
   url: string;
   quality: string;
+  type?: 'hls' | 'mp4'; // Added to help player detection
   referer?: string;
 }
 

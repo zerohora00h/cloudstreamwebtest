@@ -35,9 +35,15 @@ streamRoutes.get('/stream', async (req: Request, res: Response) => {
 
     console.log(`[Stream Proxy] Source Status: ${response.status}`);
 
-    // Explicitly select headers to forward to avoid proxy-specific or dangerous headers
+    // Explicitly select headers to forward
+    let contentType = response.headers['content-type'];
+    if (!contentType || contentType === 'application/octet-stream') {
+      if (targetUrl.includes('.m3u8')) contentType = 'application/vnd.apple.mpegurl';
+      else contentType = 'video/mp4';
+    }
+
     const forwardHeaders: Record<string, string> = {
-      'Content-Type': response.headers['content-type'] || 'video/mp4',
+      'Content-Type': contentType,
       'Accept-Ranges': 'bytes',
       'Access-Control-Allow-Origin': '*',
       'Access-Control-Allow-Methods': 'GET, OPTIONS',

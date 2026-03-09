@@ -44,6 +44,7 @@ module.exports = {
             name: 'StreamTape Direct',
             url: videoUrl,
             quality: 'Auto',
+            type: 'mp4',
             referer: url
           }];
         }

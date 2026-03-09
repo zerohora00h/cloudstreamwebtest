@@ -49,6 +49,7 @@ module.exports = {
           name: 'MixDrop Direct',
           url: videoUrl,
           quality: 'Auto',
+          type: 'mp4',
           referer: url
         }];
       }

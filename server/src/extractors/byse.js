@@ -7,13 +7,14 @@ const { URL } = require('url');
  * Utiliza descriptografia AES-128-GCM para obter o link final.
  */
 module.exports = {
-  name: 'Byse',
+  name: 'Byse Direct',
   domains: [
     'byse.sx',
     'bysezejataos.com',
     'bysebuho.com',
     'bysevepoin.com',
-    'byseqekaho.com'
+    'byseqekaho.com',
+    'myvidplay.com'
   ],
 
   async extract(url) {
@@ -61,6 +62,7 @@ module.exports = {
           name: this.name,
           url: streamUrl,
           quality: 'Auto',
+          type: 'hls',
           referer: baseUrl
         }];
       }

@@ -94,7 +94,19 @@ export default function Watch() {
             {activeLink ? (
               <MediaPlayer
                 title={title}
-                src={activeLink.url}
+                src={(() => {
+                  const url = activeLink.url;
+                  // Decode the URL because it's wrapped in our proxy (/api/stream?url=...)
+                  const decodedUrl = decodeURIComponent(url);
+
+                  const isHls = decodedUrl.includes('.m3u8') || activeLink.type === 'hls';
+                  const isMp4 = decodedUrl.includes('.mp4') || activeLink.type === 'mp4';
+
+                  if (isHls) return { src: url, type: 'application/vnd.apple.mpegurl' };
+                  if (isMp4) return { src: url, type: 'video/mp4' };
+
+                  return url;
+                })() as any}
                 className="w-full h-full"
                 crossOrigin
                 playsInline

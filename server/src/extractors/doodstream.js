@@ -31,6 +31,7 @@ module.exports = {
           name: 'Dood Direct',
           url: videoUrl,
           quality: 'Auto',
+          type: 'mp4',
           referer: url
         }];
       }

@@ -63,6 +63,7 @@ module.exports = {
           name: 'FileMoon Direct',
           url: match[1],
           quality: 'Auto',
+          type: 'hls',
           referer: url
         }];
       }

@@ -46,6 +46,7 @@ export interface MediaDetails {
 }
 
 export interface StreamLink {
+  type: string;
   name: string;
   url: string;
   quality: string;
