@@ -57,6 +57,7 @@ export interface StreamLink {
   quality: string;
   type?: 'hls' | 'mp4'; // Added to help player detection
   referer?: string;
+  headers?: Record<string, string>;
 }
 
 // The contract every plugin must implement

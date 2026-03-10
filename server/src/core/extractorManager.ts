@@ -54,8 +54,22 @@ export class ExtractorManager {
     }
   }
 
-  static async extract(url: string): Promise<StreamLink[] | null> {
+  static getExtractors(): Extractor[] {
     this.load();
+    return this.extractors;
+  }
+
+  static async extract(url: string, forceExtractorName?: string): Promise<StreamLink[] | null> {
+    this.load();
+
+    if (forceExtractorName) {
+      const extractor = this.extractors.find(e => e.name.toLowerCase() === forceExtractorName.toLowerCase());
+      if (extractor) {
+        console.log(`[Extractor] Forcing extractor: ${extractor.name}`);
+        return await extractor.extract(url);
+      }
+      console.warn(`[Extractor] Forced extractor not found: ${forceExtractorName}`);
+    }
 
     for (const extractor of this.extractors) {
       if (extractor.domains.some(d => url.includes(d))) {

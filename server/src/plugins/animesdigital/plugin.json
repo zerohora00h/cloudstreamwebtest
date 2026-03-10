@@ -1,0 +1,7 @@
+{
+  "id": "animesdigital",
+  "name": "AnimesDigital",
+  "description": "Animes Digital - Animes em FHD LEG e DUB.",
+  "version": "1.0.0",
+  "main": "index.ts"
+}

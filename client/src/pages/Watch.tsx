@@ -16,14 +16,7 @@ import {
 } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
-
-import { MediaPlayer, MediaProvider, Poster } from '@vidstack/react';
-import { DefaultVideoLayout, defaultLayoutIcons } from '@vidstack/react/player/layouts/default';
-
-import '@vidstack/react/player/styles/base.css';
-import '@vidstack/react/player/styles/default/layouts/video.css';
-import '@vidstack/react/player/styles/default/theme.css';
-
+import VideoPlayer from '../components/VideoPlayer';
 import { api, type StreamLink } from '../services/api';
 
 export default function Watch() {
@@ -92,39 +85,10 @@ export default function Watch() {
         <div className="flex-1 min-w-0">
           <div className="aspect-video bg-black rounded-xl overflow-hidden shadow-2xl ring-1 ring-white/10 relative group">
             {activeLink ? (
-              <MediaPlayer
+              <VideoPlayer
+                url={activeLink.url}
                 title={title}
-                src={(() => {
-                  const url = activeLink.url;
-                  // Decode the URL because it's wrapped in our proxy (/api/stream?url=...)
-                  const decodedUrl = decodeURIComponent(url);
-
-                  const isHls = decodedUrl.includes('.m3u8') || activeLink.type === 'hls';
-                  const isMp4 = decodedUrl.includes('.mp4') || activeLink.type === 'mp4';
-
-                  if (isHls) return { src: url, type: 'application/vnd.apple.mpegurl' };
-                  if (isMp4) return { src: url, type: 'video/mp4' };
-
-                  return url;
-                })() as any}
-                className="w-full h-full"
-                crossOrigin
-                playsInline
-                autoPlay
-              >
-                <MediaProvider>
-                  <Poster
-                    className="vds-poster"
-                    src="" // Optional: pass a poster URL if available in details
-                    alt={title}
-                  />
-                </MediaProvider>
-                <DefaultVideoLayout
-                  icons={defaultLayoutIcons}
-                  // Customizing the player color to match our indigo theme
-                  style={{ '--video-brand': '#6366f1' } as React.CSSProperties}
-                />
-              </MediaPlayer>
+              />
             ) : (
               <div className="w-full h-full flex flex-col items-center justify-center bg-black/80 gap-3">
                 <AlertCircle className="w-12 h-12 text-danger" />
@@ -181,14 +145,14 @@ export default function Watch() {
                 selectedKeys={activeLink ? new Set([activeLink.url]) : new Set()}
                 onSelectionChange={(keys) => {
                   const url = Array.from(keys)[0] as string;
-                  const link = links.find(l => l.url === url);
+                  const link = links.find((l: StreamLink) => l.url === url);
                   if (link) {
                     setActiveLink(link);
                     setError(null);
                   }
                 }}
               >
-                {links.map((link, idx) => (
+                {links.map((link: StreamLink, idx: number) => (
                   <ListboxItem
                     key={link.url}
                     description={link.quality}
