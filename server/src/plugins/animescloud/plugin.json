@@ -1,7 +1,0 @@
-{
-  "id": "animescloud",
-  "name": "AnimesCloud",
-  "description": "AnimesCloud - Animes em FHD e HD",
-  "version": "1.0.0",
-  "main": "index.ts"
-}
