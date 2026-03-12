@@ -53,12 +53,14 @@ export default createPlugin((api) => ({
           }
 
           const isSeries = genre.name.toLowerCase().includes('série');
+          const audio = $(el).find('div.capa-audio').text().trim();
 
           list.push({
             name: title,
             url: link,
             type: isSeries ? 'TvSeries' : 'Movie',
-            posterUrl: poster || ''
+            posterUrl: poster || '',
+            audio: audio || undefined
           });
         });
 
@@ -100,12 +102,14 @@ export default createPlugin((api) => ({
         }
 
         const isSeries = link.includes('serie') || link.includes('temporada');
+        const audio = $(el).find('div.capa-audio').text().trim();
 
         results.push({
           name: title,
           url: link,
           type: isSeries ? 'TvSeries' : 'Movie',
-          posterUrl: poster || ''
+          posterUrl: poster || '',
+          audio: audio || undefined
         });
       });
 
@@ -178,7 +182,7 @@ export default createPlugin((api) => ({
       $('script').each((_i, el) => {
         const data = $(el).html();
         if (data && data.includes('DOMContentLoaded')) {
-          const regex = /<li onclick='load\((\d+)\);'>/g;
+          const regex = /load\((\d+)\)/g;
           let match;
           while ((match = regex.exec(data)) !== null) {
             seasonsSet.add(parseInt(match[1]));
@@ -186,12 +190,20 @@ export default createPlugin((api) => ({
         }
       });
 
+      const sortedSeasons = Array.from(seasonsSet).sort((a, b) => a - b);
       const episodes: { name: string; season: number; episode: number; data: string }[] = [];
-      for (const season of Array.from(seasonsSet)) {
+
+      // Verifica se a URL solicita uma temporada específica (formato: url?requested_season=X)
+      const urlObj = new URL(url);
+      const requestedSeason = urlObj.searchParams.get('requested_season');
+
+      if (requestedSeason) {
+        const season = parseInt(requestedSeason);
         const seasonUrl = url.includes('?') ? `${url}&temporada=${season}` : `${url}?temporada=${season}`;
         try {
           const seasonRes = await api.request.get(seasonUrl, { headers: defaultHeaders });
           const $s = api.html.parse(seasonRes.data);
+          
           $s('div.listagem li').each((_i, ep) => {
             const href = $s(ep).find('a').first().attr('href');
             const dataId = $s(ep).attr('data-id') || '';
@@ -207,10 +219,24 @@ export default createPlugin((api) => ({
               });
             }
           });
-        } catch (_e) { /* ignore */ }
+        } catch (err: any) {
+          console.error(`Erro ao carregar temporada ${season} do PobreFlix:`, err.message);
+        }
       }
 
-      return { name: title, url, type: 'TvSeries', posterUrl, plot, year, tags, score, duration, episodes };
+      return { 
+        name: title, 
+        url, 
+        type: 'TvSeries', 
+        posterUrl, 
+        plot, 
+        year, 
+        tags, 
+        score, 
+        duration, 
+        seasons: sortedSeasons,
+        episodes 
+      };
     } else {
       return {
         name: title, url, type: 'Movie', posterUrl, plot, year, tags, score, duration,

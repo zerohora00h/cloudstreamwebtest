@@ -19,6 +19,7 @@ export interface MediaItem {
   posterUrl: string;
   year?: number | null;
   score?: number | null;
+  audio?: string;
 }
 
 // A section on the home page (e.g. "Ação", "Populares")
@@ -39,6 +40,7 @@ export interface MediaDetails {
   score?: number | null;
   duration?: number | null;
   dataUrl?: string;
+  seasons?: number[];
   episodes?: Episode[];
   recommendations?: MediaItem[];
 }

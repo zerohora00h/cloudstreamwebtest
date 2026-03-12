@@ -10,6 +10,7 @@ process.env.NODE_TLS_REJECT_UNAUTHORIZED = '0';
 
 const app = express();
 const PORT = process.env.PORT || 3001;
+const BOOT_ID = Date.now().toString(); // ID único para esta sessão do servidor
 
 app.use(cors());
 app.use(express.json());
@@ -25,6 +26,7 @@ const pluginsDir = path.join(__dirname, 'plugins');
 PluginRegistry.loadAll(pluginsDir);
 
 // API routes
+app.get('/api/config', (_req, res) => res.json({ bootId: BOOT_ID }));
 app.use('/api', pluginRoutes);
 app.use('/api', streamRoutes);
 

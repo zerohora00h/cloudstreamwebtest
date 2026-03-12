@@ -16,6 +16,7 @@ export interface MediaItem {
   posterUrl: string;
   year?: number | null;
   score?: number | null;
+  audio?: string;
 }
 
 export interface HomeSection {
@@ -41,6 +42,7 @@ export interface MediaDetails {
   score?: number | null;
   duration?: number | null;
   dataUrl?: string;
+  seasons?: number[];
   episodes?: Episode[];
   recommendations?: MediaItem[];
 }
@@ -60,6 +62,11 @@ export interface MultiSearchResult {
 }
 
 export const api = {
+  async getConfig(): Promise<{ bootId: string }> {
+    const res = await fetch(`${API_BASE}/config`);
+    return res.json();
+  },
+
   async getPlugins(): Promise<PluginManifest[]> {
     const res = await fetch(`${API_BASE}/plugins`);
     return res.json();

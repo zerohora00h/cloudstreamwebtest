@@ -13,6 +13,7 @@ function sanitizeMediaItem(raw: any): MediaItem {
     posterUrl: String(raw.posterUrl || ''),
     year: raw.year != null ? Number(raw.year) || null : null,
     score: raw.score != null ? Number(raw.score) || null : null,
+    audio: raw.audio ? String(raw.audio) : undefined,
   };
 }
 
@@ -35,6 +36,7 @@ function sanitizeDetails(raw: any): MediaDetails {
     score: raw.score != null ? Number(raw.score) || null : null,
     duration: raw.duration != null ? Number(raw.duration) || null : null,
     dataUrl: raw.dataUrl ? String(raw.dataUrl) : undefined,
+    seasons: Array.isArray(raw.seasons) ? raw.seasons.map(Number) : undefined,
     episodes: Array.isArray(raw.episodes) ? raw.episodes.map((ep: any) => ({
       name: String(ep.name || ''),
       season: Number(ep.season) || 0,

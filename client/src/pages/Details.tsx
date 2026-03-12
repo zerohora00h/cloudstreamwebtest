@@ -27,17 +27,26 @@ export default function Details() {
   const { pluginId, url } = useParams<{ pluginId: string; url: string }>();
   const navigate = useNavigate();
   const [details, setDetails] = useState<MediaDetails | null>(null);
+  const [selectedSeason, setSelectedSeason] = useState<number | null>(null);
+  const [episodesCache, setEpisodesCache] = useState<Record<number, Episode[]>>({}); // Cache em memória
   const [loading, setLoading] = useState(true);
+  const [loadingEpisodes, setLoadingEpisodes] = useState(false);
 
   useEffect(() => {
     if (!pluginId || !url) return;
 
     const fetchDetails = async () => {
       setLoading(true);
+      setEpisodesCache({}); // Limpa o cache ao mudar de título
       try {
         const decodedUrl = decodeURIComponent(url);
         const data = await api.load(pluginId, decodedUrl);
         setDetails(data);
+        
+        // Se for uma série e tiver temporadas, seleciona a primeira por padrão
+        if (data.type === 'TvSeries' && data.seasons && data.seasons.length > 0) {
+          setSelectedSeason(data.seasons[0]);
+        }
       } catch (err) {
         console.error('Failed to load details', err);
       } finally {
@@ -48,6 +57,42 @@ export default function Details() {
     fetchDetails();
     window.scrollTo(0, 0);
   }, [pluginId, url]);
+
+  // Efeito para carregar episódios quando a temporada muda
+  useEffect(() => {
+    if (!pluginId || !url || selectedSeason === null || !details || details.type !== 'TvSeries') return;
+
+    // Se já temos a temporada no cache, não busca novamente
+    if (episodesCache[selectedSeason]) {
+      return;
+    }
+
+    const fetchEpisodes = async () => {
+      setLoadingEpisodes(true);
+      try {
+        const decodedUrl = decodeURIComponent(url);
+        const seasonUrl = decodedUrl.includes('?') 
+          ? `${decodedUrl}&requested_season=${selectedSeason}` 
+          : `${decodedUrl}?requested_season=${selectedSeason}`;
+        
+        const data = await api.load(pluginId, seasonUrl);
+        if (data.episodes) {
+          setEpisodesCache(prev => ({
+            ...prev,
+            [selectedSeason]: data.episodes!
+          }));
+        }
+      } catch (err) {
+        console.error('Failed to load episodes', err);
+      } finally {
+        setLoadingEpisodes(false);
+      }
+    };
+
+    fetchEpisodes();
+  }, [pluginId, url, selectedSeason, details?.type, episodesCache]);
+
+  const currentEpisodes = selectedSeason !== null ? episodesCache[selectedSeason] || [] : [];
 
   const handlePlay = (episode?: Episode) => {
     if (!details || !pluginId) return;
@@ -163,42 +208,56 @@ export default function Details() {
           </div>
 
           {/* Episodes Section for Series */}
-          {(details.episodes && details.episodes.length > 0) && (
+          {(details.type === 'TvSeries' && details.seasons && details.seasons.length > 0) && (
             <div className="mb-10">
               <h3 className="text-lg font-bold mb-4 flex items-center gap-2">
                 <ListVideo className="w-4 h-4 text-primary" /> Episódios
               </h3>
+              
               <Tabs
-                aria-label="Episodes"
+                aria-label="Seasons"
                 color="primary"
-                variant="underlined"
-                className="mb-4"
+                variant="solid"
+                className="mb-6"
+                selectedKey={selectedSeason?.toString()}
+                onSelectionChange={(key) => setSelectedSeason(parseInt(key.toString()))}
               >
-                {/* Simplifying for now: grouping by seasons if available, or just a list */}
-                <Tab key="all" title={`Total: ${details.episodes.length}`}>
-                  <ScrollShadow className="max-h-[500px] pr-2">
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                      {details.episodes.map((ep, idx) => (
-                        <Card
-                          key={idx}
-                          isPressable
-                          className="bg-default-100/30 hover:bg-default-100/50 border border-white/5"
-                          onPress={() => handlePlay(ep)}
-                        >
-                          <CardBody className="py-3 px-4 flex flex-row items-center gap-3">
-                            <div className="w-8 h-8 rounded-full bg-primary/20 flex items-center justify-center shrink-0">
-                              <Play className="w-3 h-3 text-primary fill-primary" />
-                            </div>
-                            <div className="flex-1 overflow-hidden">
-                              <p className="text-sm font-bold truncate">{ep.name}</p>
-                              <p className="text-[10px] text-default-400">Temp {ep.season} • Ep {ep.episode}</p>
-                            </div>
-                          </CardBody>
-                        </Card>
-                      ))}
-                    </div>
-                  </ScrollShadow>
-                </Tab>
+                {details.seasons.map(season => (
+                  <Tab key={season.toString()} title={`Temporada ${season}`}>
+                    {loadingEpisodes ? (
+                      <div className="flex justify-center py-10">
+                        <Spinner size="md" label="Carregando episódios..." />
+                      </div>
+                    ) : (
+                      <ScrollShadow className="max-h-[500px] pr-2">
+                        {currentEpisodes.length > 0 ? (
+                          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                            {currentEpisodes.map((ep, idx) => (
+                              <Card
+                                key={idx}
+                                isPressable
+                                className="bg-default-100/30 hover:bg-default-100/50 border border-white/5"
+                                onPress={() => handlePlay(ep)}
+                              >
+                                <CardBody className="py-3 px-4 flex flex-row items-center gap-3">
+                                  <div className="w-8 h-8 rounded-full bg-primary/20 flex items-center justify-center shrink-0">
+                                    <Play className="w-3 h-3 text-primary fill-primary" />
+                                  </div>
+                                  <div className="flex-1 overflow-hidden">
+                                    <p className="text-sm font-bold truncate">{ep.name}</p>
+                                    <p className="text-[10px] text-default-400">Temp {ep.season} • {ep.episode > 0 ? `Ep ${ep.episode}` : 'Especial'}</p>
+                                  </div>
+                                </CardBody>
+                              </Card>
+                            ))}
+                          </div>
+                        ) : (
+                          <p className="text-center py-10 opacity-50">Nenhum episódio encontrado para esta temporada.</p>
+                        )}
+                      </ScrollShadow>
+                    )}
+                  </Tab>
+                ))}
               </Tabs>
             </div>
           )}

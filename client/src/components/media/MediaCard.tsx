@@ -33,6 +33,22 @@ export default function MediaCard({ item, pluginId }: MediaCardProps) {
       {/* Gradient overlay */}
       <div className="absolute inset-0 z-10 bg-linear-to-t from-black/95 via-black/20 to-transparent opacity-90 group-hover:opacity-100 transition-opacity duration-300" />
 
+      {/* Audio badge (Dub/Leg) */}
+      {item.audio && (
+        <div className="absolute top-2 left-2 z-20">
+          <Chip
+            size="sm"
+            variant="solid"
+            classNames={{
+              base: `${item.audio.toLowerCase().includes('dub') ? 'bg-blue-600' : 'bg-green-600'} border-none`,
+              content: 'text-white font-black text-[10px]',
+            }}
+          >
+            {item.audio.toUpperCase()}
+          </Chip>
+        </div>
+      )}
+
       {/* Score badge */}
       {item.score && (
         <div className="absolute top-2 right-2 z-20">

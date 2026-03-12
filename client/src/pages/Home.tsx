@@ -11,28 +11,60 @@ export default function Home() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const fetchHome = async () => {
+  const fetchHome = async (isInitial = false) => {
     if (!activePlugin) return;
-    setLoading(true);
+    
+    let hasLocalCache = false;
+
+    // Se for a primeira carga do plugin, tenta buscar do cache "físico" (disco) primeiro
+    if (isInitial) {
+      const cachedData = localStorage.getItem(`home_cache_${activePlugin.id}`);
+      const storedBootId = localStorage.getItem('server_boot_id');
+      
+      try {
+        const { bootId } = await api.getConfig();
+        if (storedBootId !== bootId) {
+          localStorage.clear();
+          localStorage.setItem('server_boot_id', bootId);
+        } else if (cachedData) {
+          const parsed = JSON.parse(cachedData);
+          setSections(parsed);
+          hasLocalCache = true;
+        }
+      } catch (e) {
+        console.warn('Falha ao validar sessão do servidor para cache');
+      }
+
+      // Se não tem cache, limpa as seções do plugin anterior para mostrar o loading
+      if (!hasLocalCache) {
+        setSections([]);
+        setLoading(true);
+      }
+    }
+
     setError(null);
     try {
       const data = await api.getHome(activePlugin.id);
       setSections(data);
+      localStorage.setItem(`home_cache_${activePlugin.id}`, JSON.stringify(data));
     } catch (err) {
-      setError('Falha ao carregar conteúdo da Home. Tente novamente.');
+      if (!hasLocalCache && sections.length === 0) setError('Falha ao carregar conteúdo da Home.');
     } finally {
       setLoading(false);
     }
   };
 
   useEffect(() => {
-    fetchHome();
+    fetchHome(true);
   }, [activePlugin]);
 
-  if (loading && sections.length === 0) {
+  if (loading) {
     return (
-      <div className="flex flex-col items-center justify-center py-20 gap-4">
-        <Spinner size="lg" color="primary" label="Populando o site..." />
+      <div className="flex flex-col items-center justify-center min-h-[60vh] gap-6 animate-in fade-in duration-500">
+        <Spinner size="lg" color="primary" label="Buscando as melhores mídias..."
+          classNames={{ label: "text-primary font-bold mt-4" }}
+        />
+        <p className="text-default-400 text-sm animate-pulse">Isso pode levar alguns segundos enquanto carregamos os dados de <b>{activePlugin?.name}</b>  </p>
       </div>
     );
   }
@@ -45,7 +77,7 @@ export default function Home() {
           variant="flat"
           color="primary"
           startContent={<RefreshCcw className="w-4 h-4" />}
-          onPress={fetchHome}
+          onPress={() => fetchHome()}
         >
           Recarregar
         </Button>
