@@ -61,9 +61,29 @@ export interface MultiSearchResult {
   results: MediaItem[];
 }
 
+export interface AppSettings {
+  cacheData: boolean;
+  syncEnabled: boolean;
+  downloadImagesLocally: boolean;
+}
+
 export const api = {
   async getConfig(): Promise<{ bootId: string }> {
     const res = await fetch(`${API_BASE}/config`);
+    return res.json();
+  },
+
+  async getSettings(): Promise<AppSettings> {
+    const res = await fetch(`${API_BASE}/settings`);
+    return res.json();
+  },
+
+  async updateSettings(updates: Partial<AppSettings>): Promise<{ success: boolean }> {
+    const res = await fetch(`${API_BASE}/settings`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(updates),
+    });
     return res.json();
   },
 
@@ -72,8 +92,9 @@ export const api = {
     return res.json();
   },
 
-  async getHome(pluginId: string): Promise<HomeSection[]> {
-    const res = await fetch(`${API_BASE}/plugins/${pluginId}/home`);
+  async getHome(pluginId: string, forceFresh = false): Promise<HomeSection[]> {
+    const freshQuery = forceFresh ? '?fresh=true' : '';
+    const res = await fetch(`${API_BASE}/plugins/${pluginId}/home${freshQuery}`);
     return res.json();
   },
 
@@ -87,8 +108,9 @@ export const api = {
     return res.json();
   },
 
-  async load(pluginId: string, url: string): Promise<MediaDetails> {
-    const res = await fetch(`${API_BASE}/plugins/${pluginId}/load`, {
+  async load(pluginId: string, url: string, forceFresh = false): Promise<MediaDetails> {
+    const freshQuery = forceFresh ? '?fresh=true' : '';
+    const res = await fetch(`${API_BASE}/plugins/${pluginId}/load${freshQuery}`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ url }),

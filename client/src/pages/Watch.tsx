@@ -9,15 +9,19 @@ import {
   Spinner
 } from '@heroui/react';
 import {
-  AlertCircle,
-  ChevronLeft,
   Server,
-  Tv
+  Tv,
+  Play,
+  AlertCircle,
+  ChevronLeft
 } from 'lucide-react';
 import { useEffect, useState } from 'react';
-import { useNavigate, useSearchParams } from 'react-router-dom';
+import { useLocation, useNavigate, useSearchParams } from 'react-router-dom';
 import VideoPlayer from '../components/VideoPlayer';
-import { api, type StreamLink } from '../services/api';
+import { api, type Episode, type MediaDetails, type StreamLink } from '../services/api';
+
+// Cache simples em memória para detalhes carregados no Player
+const detailsCache: Record<string, MediaDetails> = {};
 
 export default function Watch() {
   const [searchParams] = useSearchParams();
@@ -26,14 +30,27 @@ export default function Watch() {
   const pluginId = searchParams.get('pluginId');
   const data = searchParams.get('data');
   const title = searchParams.get('title') || 'Reproduzindo';
+  const originalUrl = searchParams.get('originalUrl');
+  const seasonParam = searchParams.get('season');
+  const episodeParam = searchParams.get('episode');
 
-  const [links, setLinks] = useState<StreamLink[]>([]);
-  const [activeLink, setActiveLink] = useState<StreamLink | null>(null);
-  const [loading, setLoading] = useState(true);
+  const location = useLocation();
+  const preloadedLinks = location.state?.preloadedLinks as StreamLink[] | undefined;
+
+  const [links, setLinks] = useState<StreamLink[]>(preloadedLinks || []);
+  const [activeLink, setActiveLink] = useState<StreamLink | null>(preloadedLinks?.[0] || null);
+  const [loading, setLoading] = useState(!preloadedLinks);
   const [error, setError] = useState<string | null>(null);
 
+  const [mediaDetails, setMediaDetails] = useState<MediaDetails | null>(
+    originalUrl ? detailsCache[originalUrl] || null : null
+  );
+  const [loadingDetails, setLoadingDetails] = useState(false);
+
+  // Busca links de vídeo se não vieram preloaded
   useEffect(() => {
     if (!pluginId || !data) return;
+    if (preloadedLinks && preloadedLinks.length > 0) return;
 
     const fetchLinks = async () => {
       setLoading(true);
@@ -55,9 +72,64 @@ export default function Watch() {
     };
 
     fetchLinks();
-  }, [pluginId, data]);
+  }, [pluginId, data, preloadedLinks]);
 
-  if (loading) {
+  // Busca detalhes em background para exibir temporadas/episodios
+  useEffect(() => {
+    if (!pluginId || !originalUrl) return;
+
+    let fetchUrl = originalUrl;
+    if (seasonParam && !fetchUrl.includes('requested_season')) {
+      fetchUrl = fetchUrl.includes('?') 
+        ? `${fetchUrl}&requested_season=${seasonParam}` 
+        : `${fetchUrl}?requested_season=${seasonParam}`;
+    }
+
+    // Se já temos no cache para esta URL exata, não precisa buscar
+    if (detailsCache[fetchUrl] || mediaDetails) return;
+
+    let isMounted = true;
+    const fetchBackgroundDetails = async () => {
+      setLoadingDetails(true);
+      try {
+        const decodedUrl = decodeURIComponent(fetchUrl);
+        const data = await api.load(pluginId, decodedUrl);
+        if (isMounted) {
+          detailsCache[fetchUrl] = data; // Atualiza cache global
+          setMediaDetails(data);
+        }
+      } catch (err) {
+        console.log('Fundo: erro ao carregar detalhes', err);
+      } finally {
+        if (isMounted) setLoadingDetails(false);
+      }
+    };
+
+    fetchBackgroundDetails();
+
+    return () => {
+      isMounted = false;
+    };
+  }, [pluginId, originalUrl, seasonParam, mediaDetails]);
+
+  const handlePlayEpisode = (ep: Episode) => {
+    if (!pluginId || !originalUrl) return;
+    const baseTitle = mediaDetails?.name || title.split(' - ')[0];
+    const videoTitle = `${baseTitle} - S${ep.season}E${ep.episode}`;
+    let watchUrl = `/watch?pluginId=${pluginId}&data=${encodeURIComponent(ep.data)}&title=${encodeURIComponent(videoTitle)}&originalUrl=${encodeURIComponent(originalUrl)}`;
+    watchUrl += `&season=${ep.season}&episode=${ep.episode}`;
+    navigate(watchUrl);
+  };
+
+  // Lógica de "Próximo Episódio"
+  let nextEpisode: Episode | null = null;
+  if (mediaDetails?.type === 'TvSeries' && mediaDetails.episodes && seasonParam && episodeParam) {
+    const currentSeason = parseInt(seasonParam);
+    const currentEpisode = parseInt(episodeParam);
+    nextEpisode = mediaDetails.episodes.find(ep => ep.season === currentSeason && ep.episode === currentEpisode + 1) || null;
+  }
+
+  if (loading && !preloadedLinks) {
     return (
       <div className="flex flex-col items-center justify-center py-40 gap-4">
         <Spinner size="lg" color="primary" label="Buscando servidores..." />
@@ -173,6 +245,19 @@ export default function Watch() {
             </CardBody>
           </Card>
 
+          {nextEpisode && (
+            <Button
+              color="secondary"
+              variant="flat"
+              fullWidth
+              className="mt-6 py-6 flex flex-col items-center justify-center gap-1 h-auto border border-secondary/20 hover:bg-secondary/10"
+              onPress={() => handlePlayEpisode(nextEpisode!)}
+            >
+              <span className="text-[10px] uppercase font-bold tracking-widest opacity-70">Avançar para</span>
+              <span className="font-bold text-sm">Próximo Episódio ({nextEpisode.episode})</span>
+            </Button>
+          )}
+
           <div className="mt-6 p-4 rounded-xl bg-primary/5 border border-primary/10">
             <p className="text-[10px] text-primary/70 leading-relaxed uppercase font-bold tracking-wider mb-1">
               Controles do Player
@@ -183,6 +268,44 @@ export default function Watch() {
           </div>
         </div>
       </div>
+
+      {/* Lista de Episódios da Temporada (se for Série) */}
+      {mediaDetails?.type === 'TvSeries' && mediaDetails.episodes && mediaDetails.episodes.length > 0 && (
+        <div className="mt-12 mb-20">
+          <h3 className="text-xl font-bold mb-6 flex items-center gap-2">
+            Episódios desta Temporada
+            {loadingDetails && <Spinner size="sm" className="ml-2" />}
+          </h3>
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3">
+            {mediaDetails.episodes.map((ep, idx) => {
+              const isCurrent = data === ep.data;
+              return (
+                <Card
+                  key={idx}
+                  isPressable={!isCurrent}
+                  className={`border ${isCurrent ? 'bg-primary/20 border-primary shadow-lg shadow-primary/10' : 'bg-default-100/30 hover:bg-default-100/50 border-white/5'}`}
+                  onPress={() => !isCurrent && handlePlayEpisode(ep)}
+                >
+                  <CardBody className="py-3 px-4 flex flex-row items-center gap-3">
+                    <div className={`w-10 h-10 rounded-full flex items-center justify-center shrink-0 ${isCurrent ? 'bg-primary text-white' : 'bg-primary/20 text-primary'}`}>
+                      {isCurrent ? <Tv className="w-4 h-4" /> : <Play className="w-4 h-4 ml-1 fill-current" />}
+                    </div>
+                    <div className="flex-1 overflow-hidden text-left">
+                      <p className={`text-sm font-bold truncate ${isCurrent ? 'text-primary' : ''}`}>
+                        {ep.name}
+                      </p>
+                      <p className={`text-xs ${isCurrent ? 'text-primary-400' : 'text-default-400'}`}>
+                        Temp {ep.season} • {ep.episode > 0 ? `Ep ${ep.episode}` : 'Especial'}
+                        {isCurrent && ' (Reproduzindo)'}
+                      </p>
+                    </div>
+                  </CardBody>
+                </Card>
+              );
+            })}
+          </div>
+        </div>
+      )}
     </div>
   );
 }

@@ -24,7 +24,7 @@ interface VideoPlayerProps {
 export default function VideoPlayer({ url, title, poster, onEnded }: VideoPlayerProps) {
   const videoRef = useRef<HTMLVideoElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
-  const [isPlaying, setIsPlaying] = useState(false);
+  const [isPlaying, setIsPlaying] = useState(true);
   const [currentTime, setCurrentTime] = useState(0);
   const [duration, setDuration] = useState(0);
   const [volume, setVolume] = useState(1);
@@ -229,8 +229,10 @@ export default function VideoPlayer({ url, title, poster, onEnded }: VideoPlayer
         onError={handleVideoError}
         onClick={togglePlay}
         playsInline
+        autoPlay
         poster={poster}
       />
+
 
       {/* Loading Overlay */}
       {isLoading && !error && (

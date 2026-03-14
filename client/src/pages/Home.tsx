@@ -1,62 +1,72 @@
 import { Button, Spinner } from '@heroui/react';
 import { RefreshCcw } from 'lucide-react';
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import MediaCarousel from '../components/media/MediaCarousel';
 import { usePlugins } from '../hooks/usePlugins';
+import { useSettings } from '../contexts/SettingsContext';
+import { useSyncStatus } from '../contexts/SyncContext';
 import { api, type HomeSection } from '../services/api';
 
 export default function Home() {
   const { activePlugin } = usePlugins();
+  const { settings } = useSettings();
+  const { startSync, endSync, failSync } = useSyncStatus();
   const [sections, setSections] = useState<HomeSection[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const activePluginRef = useRef(activePlugin);
+  const hasSyncedRef = useRef(false);
 
-  const fetchHome = async (isInitial = false) => {
-    if (!activePlugin) return;
-    
-    let hasLocalCache = false;
+  activePluginRef.current = activePlugin;
 
-    // Se for a primeira carga do plugin, tenta buscar do cache "físico" (disco) primeiro
-    if (isInitial) {
-      const cachedData = localStorage.getItem(`home_cache_${activePlugin.id}`);
-      const storedBootId = localStorage.getItem('server_boot_id');
-      
-      try {
-        const { bootId } = await api.getConfig();
-        if (storedBootId !== bootId) {
-          localStorage.clear();
-          localStorage.setItem('server_boot_id', bootId);
-        } else if (cachedData) {
-          const parsed = JSON.parse(cachedData);
-          setSections(parsed);
-          hasLocalCache = true;
-        }
-      } catch (e) {
-        console.warn('Falha ao validar sessão do servidor para cache');
-      }
+  const fetchHome = useCallback(async (pluginId: string, isInitialLoad: boolean) => {
+    setError(null);
 
-      // Se não tem cache, limpa as seções do plugin anterior para mostrar o loading
-      if (!hasLocalCache) {
-        setSections([]);
-        setLoading(true);
-      }
+    if (isInitialLoad) {
+      setLoading(true);
+    } else {
+      startSync('Verificando novidades...');
     }
 
-    setError(null);
     try {
-      const data = await api.getHome(activePlugin.id);
+      const data = await api.getHome(pluginId, !isInitialLoad);
+      
+      if (activePluginRef.current?.id !== pluginId) return;
+
       setSections(data);
-      localStorage.setItem(`home_cache_${activePlugin.id}`, JSON.stringify(data));
+
+      if (!isInitialLoad) {
+        endSync();
+      }
     } catch (err) {
-      if (!hasLocalCache && sections.length === 0) setError('Falha ao carregar conteúdo da Home.');
+      if (activePluginRef.current?.id !== pluginId) return;
+      if (isInitialLoad) setError('Falha ao carregar conteúdo da Home.');
+      failSync();
     } finally {
       setLoading(false);
     }
-  };
+  }, [startSync, endSync, failSync]);
 
+  // Initial load when plugin changes
   useEffect(() => {
-    fetchHome(true);
-  }, [activePlugin]);
+    if (!activePlugin) return;
+    setSections([]);
+    hasSyncedRef.current = false;
+    fetchHome(activePlugin.id, true);
+  }, [activePlugin, fetchHome]);
+
+  // Background sync after initial load (once per plugin)
+  useEffect(() => {
+    if (!activePlugin || loading || sections.length === 0) return;
+    if (!settings?.syncEnabled || hasSyncedRef.current) return;
+
+    hasSyncedRef.current = true;
+    const timer = setTimeout(() => {
+      fetchHome(activePlugin.id, false);
+    }, 1000);
+
+    return () => clearTimeout(timer);
+  }, [activePlugin, loading, sections.length, settings?.syncEnabled]);
 
   if (loading) {
     return (
@@ -77,7 +87,7 @@ export default function Home() {
           variant="flat"
           color="primary"
           startContent={<RefreshCcw className="w-4 h-4" />}
-          onPress={() => fetchHome()}
+          onPress={() => activePlugin && fetchHome(activePlugin.id, true)}
         >
           Recarregar
         </Button>
@@ -87,14 +97,24 @@ export default function Home() {
 
   return (
     <div className="animate-in fade-in duration-700">
-      {/* Hero Section placeholder - could be a featured item later */}
-      <div className="mb-10 px-1">
-        <h1 className="text-3xl font-extrabold mb-2 text-foreground/90 tracking-tight">
-          Explorar <span className="text-primary">{activePlugin?.name}</span>
-        </h1>
-        <p className="text-default-500 max-w-lg">
-          {activePlugin?.description || 'Navegue pelos melhores filmes e séries disponíveis para você.'}
-        </p>
+      <div className="mb-10 px-1 flex flex-col md:flex-row md:items-end justify-between gap-4">
+        <div>
+          <h1 className="text-3xl font-extrabold mb-2 text-foreground/90 tracking-tight">
+            Explorar <span className="text-primary">{activePlugin?.name}</span>
+          </h1>
+          <p className="text-default-500 max-w-lg">
+            {activePlugin?.description || 'Navegue pelos melhores filmes e séries disponíveis para você.'}
+          </p>
+        </div>
+        
+        <Button
+          variant="flat"
+          size="sm"
+          startContent={<RefreshCcw className="w-4 h-4" />}
+          onPress={() => activePlugin && fetchHome(activePlugin.id, false)}
+        >
+          Atualizar
+        </Button>
       </div>
 
       {sections.map((section, idx) => (

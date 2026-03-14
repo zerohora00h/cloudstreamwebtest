@@ -12,9 +12,17 @@ const defaultHeaders = {
 
 function fixUrl(url: string): string {
   if (!url) return '';
-  if (url.startsWith('//')) return `https:${url}`;
-  return url.startsWith('http') ? url : `${mainUrl}${url}`;
+  let fixedUrl = url.trim();
+
+  if (fixedUrl.startsWith('//')) {
+    fixedUrl = `https:${fixedUrl}`;
+  } else if (!fixedUrl.startsWith('http')) {
+    fixedUrl = `${mainUrl}${fixedUrl}`;
+  }
+
+  return encodeURI(fixedUrl.replace(/[“”]/g, '"').replace(/[‘’]/g, "'"));
 }
+
 
 async function getSecurityToken(api: any, url: string): Promise<string> {
   try {

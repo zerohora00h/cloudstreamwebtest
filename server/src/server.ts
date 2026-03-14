@@ -4,6 +4,10 @@ import path from 'path';
 import { PluginRegistry } from './core/pluginRegistry';
 import { pluginRoutes } from './routes/plugins';
 import { streamRoutes } from './routes/stream';
+import { settingsRoutes } from './routes/settings';
+import { initDB } from './utils/db';
+
+initDB();
 
 // Disable SSL verification for problematic streaming sites
 process.env.NODE_TLS_REJECT_UNAUTHORIZED = '0';
@@ -29,6 +33,7 @@ PluginRegistry.loadAll(pluginsDir);
 app.get('/api/config', (_req, res) => res.json({ bootId: BOOT_ID }));
 app.use('/api', pluginRoutes);
 app.use('/api', streamRoutes);
+app.use('/api', settingsRoutes);
 
 app.listen(PORT, () => {
   console.log(`[Server] Running at http://localhost:${PORT}`);

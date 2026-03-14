@@ -19,9 +19,19 @@ const homeGenres = [
 
 function fixUrl(url: string): string {
   if (!url) return '';
-  if (url.startsWith('//')) return `https:${url}`;
-  return url.startsWith('http') ? url : `${BASE_URL}${url}`;
+  let fixedUrl = url.trim();
+
+  if (fixedUrl.startsWith('//')) {
+    fixedUrl = `https:${fixedUrl}`;
+  } else if (!fixedUrl.startsWith('http')) {
+    fixedUrl = `${BASE_URL}${fixedUrl}`;
+  }
+
+  // Handle special quotes that might come from copy-paste or site formatting
+  // and then encode the URI to handle other special characters while keeping it functional
+  return encodeURI(fixedUrl.replace(/[“”]/g, '"').replace(/[‘’]/g, "'"));
 }
+
 
 export default createPlugin((api) => ({
   async getHome(): Promise<HomeSection[]> {

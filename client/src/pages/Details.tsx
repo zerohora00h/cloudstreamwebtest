@@ -16,47 +16,79 @@ import {
   Info,
   ListVideo,
   Play,
-  Star
+  Star,
+  RefreshCcw
 } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import MediaCard from '../components/media/MediaCard';
-import { api, type Episode, type MediaDetails } from '../services/api';
+import { useSyncStatus } from '../contexts/SyncContext';
+import { api, type Episode, type MediaDetails, type StreamLink } from '../services/api';
 
 export default function Details() {
   const { pluginId, url } = useParams<{ pluginId: string; url: string }>();
   const navigate = useNavigate();
+  const { startSync, endSync, failSync } = useSyncStatus();
   const [details, setDetails] = useState<MediaDetails | null>(null);
   const [selectedSeason, setSelectedSeason] = useState<number | null>(null);
-  const [episodesCache, setEpisodesCache] = useState<Record<number, Episode[]>>({}); // Cache em memória
+  const [episodesCache, setEpisodesCache] = useState<Record<number, Episode[]>>({}); 
   const [loading, setLoading] = useState(true);
   const [loadingEpisodes, setLoadingEpisodes] = useState(false);
+  const [preloadedLinks, setPreloadedLinks] = useState<StreamLink[] | null>(null);
+
+  const fetchDetails = async (forceFresh = false) => {
+    if (!pluginId || !url) return;
+    
+    if (forceFresh || !details) {
+      if(!details) setLoading(true);
+      if(forceFresh) startSync('Atualizando detalhes...');
+      setEpisodesCache({});
+    }
+
+    try {
+      const decodedUrl = decodeURIComponent(url);
+      const data = await api.load(pluginId, decodedUrl, forceFresh);
+      setDetails(data);
+      
+      if (data.type === 'TvSeries' && data.seasons && data.seasons.length > 0) {
+        if (selectedSeason === null || forceFresh) setSelectedSeason(data.seasons[0]);
+      }
+      if (forceFresh) endSync();
+    } catch (err) {
+      console.error('Failed to load details', err);
+      if (forceFresh) failSync();
+    } finally {
+      setLoading(false);
+    }
+  };
 
   useEffect(() => {
-    if (!pluginId || !url) return;
+    fetchDetails(false);
+    window.scrollTo(0, 0);
+  }, [pluginId, url]);
 
-    const fetchDetails = async () => {
-      setLoading(true);
-      setEpisodesCache({}); // Limpa o cache ao mudar de título
+  // Efeito para pré-carregar links de filmes
+  useEffect(() => {
+    if (!pluginId || !details?.url || details.type !== 'Movie') return;
+
+    let isMounted = true;
+    const prefetchMovieLinks = async () => {
       try {
-        const decodedUrl = decodeURIComponent(url);
-        const data = await api.load(pluginId, decodedUrl);
-        setDetails(data);
-        
-        // Se for uma série e tiver temporadas, seleciona a primeira por padrão
-        if (data.type === 'TvSeries' && data.seasons && data.seasons.length > 0) {
-          setSelectedSeason(data.seasons[0]);
+        const result = await api.loadLinks(pluginId, details.dataUrl || details.url);
+        if (isMounted && result.length > 0) {
+          setPreloadedLinks(result);
         }
       } catch (err) {
-        console.error('Failed to load details', err);
-      } finally {
-        setLoading(false);
+        console.error('Falha no prefetch dos links do filme', err);
       }
     };
 
-    fetchDetails();
-    window.scrollTo(0, 0);
-  }, [pluginId, url]);
+    prefetchMovieLinks();
+    
+    return () => {
+      isMounted = false;
+    };
+  }, [pluginId, details]);
 
   // Efeito para carregar episódios quando a temporada muda
   useEffect(() => {
@@ -99,8 +131,16 @@ export default function Details() {
     const mediaData = episode ? episode.data : (details.dataUrl || details.url);
     const videoTitle = episode ? `${details.name} - S${episode.season}E${episode.episode}` : details.name;
 
-    navigate(`/watch?pluginId=${pluginId}&data=${encodeURIComponent(mediaData)}&title=${encodeURIComponent(videoTitle)}`);
+    let watchUrl = `/watch?pluginId=${pluginId}&data=${encodeURIComponent(mediaData)}&title=${encodeURIComponent(videoTitle)}&originalUrl=${encodeURIComponent(url || '')}`;
+    if (episode) {
+      watchUrl += `&season=${episode.season}&episode=${episode.episode}`;
+    }
+
+    navigate(watchUrl, {
+      state: { preloadedLinks: episode ? null : preloadedLinks } // Só usa os links pré-carregados se for filme
+    });
   };
+
 
   if (loading) {
     return (
@@ -121,15 +161,26 @@ export default function Details() {
 
   return (
     <div className="animate-in fade-in duration-1000">
-      <Button
-        variant="light"
-        size="sm"
-        startContent={<ChevronLeft className="w-4 h-4" />}
-        className="mb-6 opacity-70 hover:opacity-100"
-        onPress={() => navigate(-1)}
-      >
-        Voltar
-      </Button>
+      <div className="flex justify-between items-center mb-6">
+        <Button
+          variant="light"
+          size="sm"
+          startContent={<ChevronLeft className="w-4 h-4" />}
+          className="opacity-70 hover:opacity-100"
+          onPress={() => navigate(-1)}
+        >
+          Voltar
+        </Button>
+        <Button
+          variant="flat"
+          size="sm"
+          color="primary"
+          startContent={<RefreshCcw className="w-4 h-4" />}
+          onPress={() => fetchDetails(true)}
+        >
+          Atualizar
+        </Button>
+      </div>
 
       <div className="flex flex-col md:flex-row gap-8 lg:gap-12 mb-12">
         {/* Poster Column */}
@@ -219,7 +270,7 @@ export default function Details() {
                 color="primary"
                 variant="solid"
                 className="mb-6"
-                selectedKey={selectedSeason?.toString()}
+                selectedKey={selectedSeason !== null ? selectedSeason.toString() : undefined}
                 onSelectionChange={(key) => setSelectedSeason(parseInt(key.toString()))}
               >
                 {details.seasons.map(season => (

@@ -6,17 +6,25 @@ import Home from './pages/Home';
 import Search from './pages/Search';
 import Watch from './pages/Watch';
 
+import { SettingsProvider } from './contexts/SettingsContext';
+import { SyncProvider } from './contexts/SyncContext';
+
 export default function App() {
   return (
-    <PluginProvider>
-      <Routes>
-        <Route element={<Layout />}>
-          <Route path="/" element={<Home />} />
-          <Route path="/search" element={<Search />} />
-          <Route path="/details/:pluginId/:url" element={<Details />} />
-          <Route path="/watch" element={<Watch />} />
-        </Route>
-      </Routes>
-    </PluginProvider>
+    <SettingsProvider>
+      <SyncProvider>
+        <PluginProvider>
+          <Routes>
+            <Route element={<Layout />}>
+              <Route path="/" element={<Home />} />
+              <Route path="/search" element={<Search />} />
+              <Route path="/details/:pluginId/:url" element={<Details />} />
+              <Route path="/watch" element={<Watch />} />
+            </Route>
+          </Routes>
+        </PluginProvider>
+      </SyncProvider>
+    </SettingsProvider>
+
   );
 }

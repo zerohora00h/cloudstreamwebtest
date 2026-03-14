@@ -3,6 +3,19 @@ import type { HomeSection, MediaDetails, MediaItem, StreamLink } from '@shared/t
 
 const mainUrl = 'https://cnvsweb.stream';
 
+function fixUrl(url: string): string {
+  if (!url) return '';
+  let fixedUrl = url.trim();
+
+  if (fixedUrl.startsWith('//')) {
+    fixedUrl = `https:${fixedUrl}`;
+  } else if (!fixedUrl.startsWith('http')) {
+    fixedUrl = `${mainUrl}${fixedUrl}`;
+  }
+
+  return encodeURI(fixedUrl.replace(/[“”]/g, '"').replace(/[‘’]/g, "'"));
+}
+
 const INTERNAL_DRM_ID = "pygrp_KJp_cyHo0.lbp-kBz.mo52lYEgGDK1tDG9tb_9GXI_";
 
 function getAppConfigToken(): string {
@@ -57,7 +70,7 @@ export default createPlugin((api) => ({
           const isSeries = item.time?.toLowerCase().includes('temporadas');
           return {
             name: item.title?.replace(/[\n\r]+/g, ' ').trim() || '',
-            url: `${mainUrl}/watch/${item.slug}`,
+            url: fixUrl(`/watch/${item.slug}`),
             type: isSeries ? 'TvSeries' : 'Movie',
             posterUrl: item.image ? item.image.replace('/w300/', '/original/') : '',
             year: parseInt(item.release) || null,
@@ -208,7 +221,7 @@ export default createPlugin((api) => ({
         $('a.btn.free').each((_i, el) => {
           const href = $(el).attr('href');
           if (href && (href.includes('/s/') || href.includes('/m/')) && !href.includes('history.go')) {
-            const abs = href.startsWith('http') ? href : `http://www.playcnvs.stream${href}`;
+            const abs = fixUrl(href);
             sourceUrls.push({ name: $(el).text().trim(), url: abs });
           }
         });
