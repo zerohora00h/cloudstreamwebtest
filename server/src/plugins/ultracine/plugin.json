@@ -1,0 +1,7 @@
+{
+  "id": "ultracine",
+  "name": "UltraCine",
+  "description": "UltraCine - Filmes e Séries em Português",
+  "version": "1.0.0",
+  "main": "index.ts"
+}

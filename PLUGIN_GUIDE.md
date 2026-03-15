@@ -141,9 +141,10 @@ $('div.item').each((i, el) => {
   tags?: string[];           // ["Ação", "Aventura"]
   score?: number;
   duration?: number;         // Em minutos
-  dataUrl?: string;          // Usado no loadLinks (para filmes)
-  episodes?: Episode[];      // Usado para séries
-  recommendations?: MediaItem[];
+  dataUrl?: string;          // Usado no loadLinks (geralmente para filmes)
+  seasons?: number[];        // [1, 2, 3] -> Obrigatório para 'TvSeries' exibir abas na UI
+  episodes?: Episode[];      // Usado para séries/animes
+  recommendations?: MediaItem[]; // Títulos Semelhantes (renderizados abaixo do player)
 }
 ```
 
