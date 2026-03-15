@@ -4,7 +4,7 @@ import crypto from 'crypto';
 
 export default createExtractor((api) => ({
   name: 'VidStack',
-  domains: ['vidstack.io', 'server1.uns.bio', 'uns.bio', 'vidcdn.pro', 'embedplay.upns.ink', 'embedplay.upns.one', 'embedplay.upns.pro', 'playembedapi.site', 'vsembed.ru', 'vsembed.top'], // Domains found in the Kotlin class
+  domains: ['vidstack.io', 'server1.uns.bio', 'uns.bio', 'vidcdn.pro', 'embedplay.upns.ink', 'embedplay.upns.one', 'embedplay.upns.pro'], // Domains found in the Kotlin class
 
   async extract(url: string): Promise<StreamLink[] | null> {
     try {

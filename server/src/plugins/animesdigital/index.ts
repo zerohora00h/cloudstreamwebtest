@@ -23,7 +23,6 @@ function fixUrl(url: string): string {
   return encodeURI(fixedUrl.replace(/[“”]/g, '"').replace(/[‘’]/g, "'"));
 }
 
-
 async function getSecurityToken(api: any, url: string): Promise<string> {
   try {
     const res = await api.request.get(url);
@@ -153,9 +152,7 @@ export default createPlugin((api) => ({
     const res = await api.request.get(url);
     const $ = api.html.parse(res.data);
 
-    // If it's a direct video page, we try to find the anime main page
     const isEpisodePage = url.includes('/video/a/');
-
     const title = $('meta[property="og:title"]').attr('content')?.split(' - ')[0] || $('h1').text().trim();
     const poster = fixUrl($('meta[property="og:image"]').attr('content') || '');
     const plot = $('meta[property="og:description"]').attr('content') || $('.sinopse').text().trim();
@@ -167,32 +164,35 @@ export default createPlugin((api) => ({
     const type = isMovie ? 'Movie' : 'TvSeries';
 
     if (isMovie) {
-      return { name: title, url, type, posterUrl: poster, plot, tags, dataUrl: `movie|${url}` };
+      return {
+        name: title,
+        url,
+        type,
+        posterUrl: poster,
+        plot,
+        tags,
+        dataUrl: url
+      };
     }
 
     const episodes: Episode[] = [];
 
-    // Lógica para carregar episódios 
-    // Animes na AnimesDigital costumam listar os episódios em '.item_ep a'
     $('.item_ep a').each((_i, el) => {
       const epUrl = $(el).attr('href');
       const epName = $(el).find('.title_anime').text().trim() || $(el).attr('title') || '';
-
-      // Tenta extrair o número do episódio do título (ex: "Episódio 12")
       const epNumMatch = epName.match(/(?:Episódio|Ep)\s*(\d+)/i) || epName.match(/(\d+)/);
       const epNum = epNumMatch ? parseInt(epNumMatch[1]) : episodes.length + 1;
 
       if (epUrl) {
         episodes.push({
           name: epName || `Episódio ${epNum}`,
-          season: 1, // Geralmente animes na animesdigital ficam numa página só
+          season: 1,
           episode: epNum,
-          data: `series|${fixUrl(epUrl)}`
+          data: fixUrl(epUrl)
         });
       }
     });
 
-    // Se estiver em uma página de episódio direto e não achou a lista, retorna apenas ele
     if (episodes.length === 0 && isEpisodePage) {
       const epNumMatch = title.match(/(?:Episódio|Ep)\s*(\d+)/i) || title.match(/(\d+)/);
       const epNum = epNumMatch ? parseInt(epNumMatch[1]) : 1;
@@ -200,18 +200,16 @@ export default createPlugin((api) => ({
         name: `Episódio ${epNum}`,
         season: 1,
         episode: epNum,
-        data: `series|${url}`
+        data: url
       });
     }
 
-    // Ordena do primeiro pro último
     episodes.sort((a, b) => a.episode - b.episode);
 
-    // Extrai o link para a temporada inteira se estiver num episódio
     const recommendations: MediaItem[] = [];
     if (isEpisodePage) {
       const allEpsUrl = $('.epsL .subitem a:has(i:contains("menu"))').attr('href') ||
-        $('.epsL .subitem a').last().attr('href'); // fallback
+        $('.epsL .subitem a').last().attr('href');
 
       if (allEpsUrl) {
         recommendations.push({
@@ -230,34 +228,32 @@ export default createPlugin((api) => ({
       posterUrl: poster,
       plot,
       tags,
-      seasons: [1], // Obrigatório para a UI de séries
+      seasons: [1],
       episodes,
       recommendations
     };
   },
 
   async loadLinks(data: string): Promise<StreamLink[]> {
-    const [type, url] = data.split('|', 2);
-    const actualUrl = url || data;
+    const actualUrl = data; // AGORA RECEBE A URL DIRETA
 
     try {
       const res = await api.request.get(actualUrl);
       const $ = api.html.parse(res.data);
       const links: StreamLink[] = [];
 
-      // Seleciona iframes baseados no tipo (Filme ou Série)
-      const iframes = (type === 'series') ? $('.tab-video iframe[src]') : $('iframe[src]');
+      // Seleciona iframes tanto da aba de vídeo (séries) quanto globais (filmes)
+      const iframes = $('.tab-video iframe[src], .video-player iframe[src], iframe[src]');
 
       for (let i = 0; i < iframes.length; i++) {
         const iframe = iframes[i];
         const src = $(iframe).attr('src');
         if (!src) continue;
 
-        // 1. Caso AniVideo (M3U8 direto no parâmetro 'd')
         if (src.includes('anivideo.net') && src.includes('d=')) {
           try {
             const urlParam = src.split('d=')[1].split('&')[0];
-            const hlsUrl = decodeURIComponent(urlParam); // Correção: era URL Encoded, não B64
+            const hlsUrl = decodeURIComponent(urlParam);
 
             links.push({
               name: 'Player FHD (AniVideo)',
@@ -269,7 +265,6 @@ export default createPlugin((api) => ({
           } catch (e) { console.error("Erro no decode AniVideo", e); }
         }
 
-        // 3. Caso Genérico (Mixdrop, Streamtape, etc)
         else if (src.startsWith('http')) {
           links.push({
             name: 'Player Externo',

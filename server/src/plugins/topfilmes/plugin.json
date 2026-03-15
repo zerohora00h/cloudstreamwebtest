@@ -1,0 +1,7 @@
+{
+  "id": "topfilmes",
+  "name": "TopFilmes",
+  "description": "Filmes dublados via TopFilmes",
+  "version": "1.0.0",
+  "main": "index.ts"
+}

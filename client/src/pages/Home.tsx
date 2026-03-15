@@ -1,7 +1,8 @@
-import { Button, Spinner } from '@heroui/react';
+import { Button } from '@heroui/react';
 import { RefreshCcw } from 'lucide-react';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import MediaCarousel from '../components/media/MediaCarousel';
+import MediaSkeleton from '../components/media/MediaSkeleton';
 import { usePlugins } from '../hooks/usePlugins';
 import { useSettings } from '../contexts/SettingsContext';
 import { useSync } from '../contexts/SyncContext';
@@ -150,33 +151,6 @@ export default function Home() {
     return () => clearTimeout(timer);
   }, [activePlugin, loading, sections, settings?.recursiveHomeSync, recursivePrefetch]);
 
-  if (loading) {
-    return (
-      <div className="flex flex-col items-center justify-center min-h-[60vh] gap-6 animate-in fade-in duration-500">
-        <Spinner size="lg" color="primary" label="Buscando as melhores mídias..."
-          classNames={{ label: "text-primary font-bold mt-4" }}
-        />
-        <p className="text-default-400 text-sm animate-pulse">Isso pode levar alguns segundos enquanto carregamos os dados de <b>{activePlugin?.name}</b>  </p>
-      </div>
-    );
-  }
-
-  if (error) {
-    return (
-      <div className="flex flex-col items-center justify-center py-20 gap-4">
-        <p className="text-danger font-medium">{error}</p>
-        <Button
-          variant="flat"
-          color="primary"
-          startContent={<RefreshCcw className="w-4 h-4" />}
-          onPress={() => activePlugin && fetchHome(activePlugin.id, true)}
-        >
-          Recarregar
-        </Button>
-      </div>
-    );
-  }
-
   return (
     <div className="animate-in fade-in duration-700">
       <div className="mb-10 px-1 flex flex-col md:flex-row md:items-end justify-between gap-4">
@@ -194,24 +168,43 @@ export default function Home() {
           size="sm"
           startContent={<RefreshCcw className="w-4 h-4" />}
           onPress={() => activePlugin && fetchHome(activePlugin.id, false)}
+          isDisabled={loading}
         >
           Atualizar
         </Button>
       </div>
 
-      {sections.map((section, idx) => (
-        <MediaCarousel
-          key={`${section.name}-${idx}`}
-          title={section.name}
-          items={section.list}
-          pluginId={activePlugin!.id}
-        />
-      ))}
-
-      {sections.length === 0 && !loading && (
+      {loading ? (
+        <div className="space-y-12">
+          {[1, 2, 3, 4].map((i) => (
+            <MediaSkeleton key={i} />
+          ))}
+        </div>
+      ) : error ? (
+        <div className="flex flex-col items-center justify-center py-20 gap-4">
+          <p className="text-danger font-medium">{error}</p>
+          <Button
+            variant="flat"
+            color="primary"
+            startContent={<RefreshCcw className="w-4 h-4" />}
+            onPress={() => activePlugin && fetchHome(activePlugin.id, true)}
+          >
+            Recarregar
+          </Button>
+        </div>
+      ) : sections.length === 0 ? (
         <div className="flex flex-col items-center justify-center py-20 opacity-50">
           <p>Nenhum conteúdo encontrado para este plugin.</p>
         </div>
+      ) : (
+        sections.map((section, idx) => (
+          <MediaCarousel
+            key={`${section.name}-${idx}`}
+            title={section.name}
+            items={section.list}
+            pluginId={activePlugin!.id}
+          />
+        ))
       )}
     </div>
   );

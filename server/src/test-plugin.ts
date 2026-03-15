@@ -34,8 +34,9 @@ async function runTest() {
   try {
     let pluginPath = path.resolve(__dirname, 'plugins', pluginName, 'index.ts');
     
-    // No Windows, o import dinâmico precisa de file:// para caminhos absolutos
-    const pluginUrl = `file://${pluginPath.replace(/\\/g, '/')}`;
+    // Import cruzado validado de URLs de arquivo
+    const { pathToFileURL } = require('url');
+    const pluginUrl = pathToFileURL(pluginPath).href;
     console.log(`\n🔌 Carregando plugin de: ${pluginUrl}`);
     
     // Importa o factory e executa passando a nossa sandboxApi

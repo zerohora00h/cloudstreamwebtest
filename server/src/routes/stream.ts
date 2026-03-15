@@ -1,5 +1,6 @@
 import axios from 'axios';
 import { Request, Response, Router } from 'express';
+import zlib from 'zlib';
 
 export const streamRoutes = Router();
 
@@ -36,9 +37,11 @@ streamRoutes.get('/stream', async (req: Request, res: Response) => {
     console.log(`[Stream Proxy] Source Status: ${response.status}`);
 
     // Explicitly select headers to forward
-    let contentType = response.headers['content-type'];
+    let contentType = response.headers['content-type']?.toString();
+    const isM3U8 = (targetUrl.split('?')[0].endsWith('.m3u8') || contentType?.includes('mpegurl') || contentType?.includes('application/x-mpegURL')) && response.status === 200;
+
     if (!contentType || contentType === 'application/octet-stream') {
-      if (targetUrl.includes('.m3u8')) contentType = 'application/vnd.apple.mpegurl';
+      if (isM3U8) contentType = 'application/vnd.apple.mpegurl';
       else contentType = 'video/mp4';
     }
 
@@ -52,12 +55,74 @@ streamRoutes.get('/stream', async (req: Request, res: Response) => {
       'Cache-Control': 'no-cache',
     };
 
-    if (response.headers['content-length']) forwardHeaders['Content-Length'] = response.headers['content-length'];
-    if (response.headers['content-range']) forwardHeaders['Content-Range'] = response.headers['content-range'];
-    if (response.headers['content-encoding']) forwardHeaders['Content-Encoding'] = response.headers['content-encoding'];
+    if (response.headers['content-length']) forwardHeaders['Content-Length'] = response.headers['content-length'].toString();
+    if (response.headers['content-range']) forwardHeaders['Content-Range'] = response.headers['content-range'].toString();
+
+    // If it's a manifest, we need to rewrite it to handle relative URLs
+    if (isM3U8) {
+      console.log(`[Stream Proxy] Rewriting M3U8 manifest: ${targetUrl.substring(0, 100)}`);
+      
+      const isGzip = response.headers['content-encoding'] === 'gzip';
+      let dataStream = response.data;
+
+      if (isGzip) {
+        console.log('[Stream Proxy] Decompressing GZIP manifest...');
+        dataStream = response.data.pipe(zlib.createGunzip());
+      }
+
+      let manifestText = '';
+      for await (const chunk of dataStream) {
+        manifestText += chunk.toString();
+      }
+
+      const baseUrl = new URL(targetUrl);
+      const host = req.get('host');
+      const protocol = req.protocol;
+      const proxyBaseUrl = `${protocol}://${host}${req.baseUrl}/stream`;
+
+      const lines = manifestText.split('\n');
+      const rewrittenLines = lines.map(line => {
+        const trimmedLine = line.trim();
+        if (trimmedLine === '' || trimmedLine.startsWith('#EXT-X-KEY')) return line; // Skip keys for now or handle them
+
+        // Helper to wrap URL in proxy
+        const proxyWrap = (rawUrl: string) => {
+          try {
+            const resolvedUrl = new URL(rawUrl, baseUrl).href;
+            return `${proxyBaseUrl}?url=${encodeURIComponent(resolvedUrl)}&referer=${encodeURIComponent(referer || targetUrl)}`;
+          } catch (e) {
+            return rawUrl;
+          }
+        };
+
+        // If it starts with #, it's a tag. We need to check for URI="..."
+        if (trimmedLine.startsWith('#')) {
+          return line.replace(/URI="(.*?)"/g, (match, p1) => {
+            return `URI="${proxyWrap(p1)}"`;
+          });
+        }
+
+        // Otherwise it's a direct URL line
+        return proxyWrap(trimmedLine);
+      });
+
+      const finalManifest = rewrittenLines.join('\n');
+      forwardHeaders['Content-Length'] = Buffer.byteLength(finalManifest).toString();
+      
+      // Remove encoding header since we've decompressed and rewritten to plain text
+      delete forwardHeaders['Content-Encoding'];
+
+      res.writeHead(response.status, forwardHeaders);
+      res.end(finalManifest);
+      return;
+    }
+
+    // For non-m3u8 streams (segments, mp4), keep compression if present and pipe directly
+    if (response.headers['content-encoding']) {
+      forwardHeaders['Content-Encoding'] = response.headers['content-encoding'].toString();
+    }
 
     res.writeHead(response.status, forwardHeaders);
-
     response.data.pipe(res);
 
     req.on('close', () => {

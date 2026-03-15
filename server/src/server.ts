@@ -1,6 +1,14 @@
+const moduleAlias = require('module-alias');
+const path = require('path');
+
+moduleAlias.addAliases({
+  "@shared": path.join(__dirname, '../../shared'),
+  "@utils": path.join(__dirname, 'utils'),
+  "@plugin-api": path.join(__dirname, 'core/plugin-api/api')
+});
+
 import cors from 'cors';
 import express from 'express';
-import path from 'path';
 import { PluginRegistry } from './core/pluginRegistry';
 import { pluginRoutes } from './routes/plugins';
 import { streamRoutes } from './routes/stream';
@@ -64,8 +72,10 @@ app.use((req, res, next) => {
 });
 
 // Load plugins
-const pluginsDir = path.join(__dirname, 'plugins');
-PluginRegistry.loadAll(pluginsDir);
+(async () => {
+  const pluginsDir = path.join(__dirname, 'plugins');
+  await PluginRegistry.loadAll(pluginsDir);
+})();
 
 // API routes
 app.get('/api/config', (_req, res) => res.json({ bootId: BOOT_ID }));

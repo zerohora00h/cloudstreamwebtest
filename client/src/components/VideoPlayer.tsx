@@ -24,7 +24,7 @@ interface VideoPlayerProps {
 export default function VideoPlayer({ url, title, poster, onEnded }: VideoPlayerProps) {
   const videoRef = useRef<HTMLVideoElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
-  const [isPlaying, setIsPlaying] = useState(true);
+  const [isPlaying, setIsPlaying] = useState(false);
   const [currentTime, setCurrentTime] = useState(0);
   const [duration, setDuration] = useState(0);
   const [volume, setVolume] = useState(1);
@@ -39,43 +39,82 @@ export default function VideoPlayer({ url, title, poster, onEnded }: VideoPlayer
     const video = videoRef.current;
     if (!video) return;
 
+    let isMounted = true;
     setIsLoading(true);
+    setIsPlaying(false);
     setError(null);
     let hls: Hls | null = null;
 
-    // Prioriza HLS por padrão, a menos que seja explicitamente .mp4
-    const isMp4 = url.toLowerCase().includes('.mp4');
-    const isHls = !isMp4 || url.includes('.m3u8') || url.includes('type=hls');
+    // Detecção aprimorada: se contém 'get_video', '.mp4' ou não parece HLS, tratamos como MP4
+    const urlLower = url.toLowerCase();
+    const isExplicitHls = urlLower.includes('.m3u8') || urlLower.includes('type=hls') || urlLower.includes('m3u8');
+    const isExplicitMp4 = urlLower.includes('.mp4') || urlLower.includes('get_video') || urlLower.includes('streamtape.com');
+    
+    // Tentamos HLS apenas se for explicitamente HLS ou não for explicitamente MP4
+    const shouldTryHls = isExplicitHls || (!isExplicitMp4 && Hls.isSupported());
 
-    if (isHls && Hls.isSupported()) {
+    const startNativePlayback = () => {
+      if (!isMounted) return;
+      console.log("[VideoPlayer] Starting native playback for:", url);
+      video.src = url;
+      video.load();
+      const playPromise = video.play();
+      if (playPromise !== undefined) {
+        playPromise.catch(err => {
+          console.warn("[VideoPlayer] native play() failed:", err.message);
+          if (isMounted) setIsPlaying(false);
+        });
+      }
+    };
+
+    if (shouldTryHls) {
       hls = new Hls({
         capLevelToPlayerSize: true,
         autoStartLoad: true,
       });
       hls.loadSource(url);
       hls.attachMedia(video);
+      
       hls.on(Hls.Events.MANIFEST_PARSED, () => {
+        if (!isMounted) return;
         setIsLoading(false);
+        video.play().catch(err => {
+          console.warn("[VideoPlayer] HLS play() failed:", err.message);
+          if (isMounted) setIsPlaying(false);
+        });
       });
+
       hls.on(Hls.Events.ERROR, (_event, data) => {
+        if (!isMounted) return;
+        
         if (data.fatal) {
-          console.error('HLS Fatal Error:', data.type);
-          setError('O servidor de vídeo retornou um erro fatal (500 ou indisponível).');
-          setIsLoading(false);
-          hls?.destroy();
+          console.error('[VideoPlayer] HLS Fatal Error:', data.type, data.details);
+          
+          // Se for erro de rede ou de parsing no manifesto, tentamos fallback nativo
+          if (data.type === Hls.ErrorTypes.NETWORK_ERROR || data.type === Hls.ErrorTypes.MEDIA_ERROR) {
+             console.log("[VideoPlayer] Attempting native fallback...");
+             hls?.destroy();
+             hls = null;
+             startNativePlayback();
+          } else {
+            setError('Falha crítica no carregamento do vídeo.');
+            setIsLoading(false);
+            hls?.destroy();
+          }
         }
       });
-    } else if (video.canPlayType('application/vnd.apple.mpegurl')) {
-      // Suporte nativo Safari/iOS
-      video.src = url;
-      video.addEventListener('loadedmetadata', () => setIsLoading(false));
     } else {
-      // Fallback para MP4 ou outros formatos nativos
-      video.src = url;
-      video.addEventListener('loadedmetadata', () => setIsLoading(false));
+      startNativePlayback();
     }
 
+    const handleLoadedMetadata = () => {
+      if (isMounted) setIsLoading(false);
+    };
+    video.addEventListener('loadedmetadata', handleLoadedMetadata);
+
     return () => {
+      isMounted = false;
+      video.removeEventListener('loadedmetadata', handleLoadedMetadata);
       if (hls) {
         hls.destroy();
       }

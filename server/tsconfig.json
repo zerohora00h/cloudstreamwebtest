@@ -20,6 +20,9 @@
       "@shared/*": [
         "../shared/*"
       ],
+      "@utils/*": [
+        "src/utils/*"
+      ],
       "@plugin-api": [
         "src/core/plugin-api/api"
       ],

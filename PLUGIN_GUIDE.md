@@ -171,9 +171,11 @@ $('div.item').each((i, el) => {
 
 ---
 
-## 5. Extratores (Opcional)
+## 5. Extratores Locais (Opcional)
 
-Se o site do seu plugin usa um player próprio ou pouco conhecido, você pode criar um extrator local. Crie na subpasta `extractors/`:
+Se o site do seu plugin usa um player próprio, uma versão modificada de um player existente, ou um hoster privado, você deve criar um extrator local em vez de colocá-lo na pasta global de extratores.
+
+Isso é fundamental porque garante que lógicas altamente personalizadas fiquem isoladas e não interfiram (ou poluam) os extratores globais que servem para toda a aplicação. Crie-o na subpasta `extractors/` dentro do diretório do seu plugin:
 
 ```typescript
 // extractors/meu-player.ts

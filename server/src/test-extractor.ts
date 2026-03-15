@@ -1,3 +1,17 @@
+try {
+  const moduleAlias = require('module-alias');
+  const path = require('path');
+
+  moduleAlias.addAliases({
+    "@shared": path.join(__dirname, '../../shared'),
+    "@utils": path.join(__dirname, 'utils'),
+    "@plugin-api": path.join(__dirname, 'core/plugin-api/api')
+  });
+} catch (e) {
+  console.warn('⚠️ module-alias não encontrado. Aliases podem não funcionar.');
+}
+
+import path from 'path';
 import { ExtractorManager } from './core/extractorManager';
 
 async function testExtractor() {
@@ -11,11 +25,21 @@ async function testExtractor() {
     console.log('  npx tsx src/test-extractor.ts https://site.com/video Blogger\n');
 
     console.log('Extratores disponíveis:');
-    ExtractorManager.getExtractors().forEach(e => {
+    
+    // Carrega extratores de plugins também
+    const { PluginRegistry } = require('./core/pluginRegistry');
+    await PluginRegistry.loadAll(path.join(__dirname, 'plugins'));
+
+    const extractors = await ExtractorManager.getExtractors();
+    extractors.forEach(e => {
       console.log(` - ${e.name} (${e.domains.join(', ')})`);
     });
     process.exit(1);
   }
+
+  // Carrega plugins antes de extrair para registrar extratores locais
+  const { PluginRegistry } = require('./core/pluginRegistry');
+  await PluginRegistry.loadAll(path.join(__dirname, 'plugins'));
 
   console.log(`\n🔍 Testando URL: ${url}`);
   if (forceExtractor) {

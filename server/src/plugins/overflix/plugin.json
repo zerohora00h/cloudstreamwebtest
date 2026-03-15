@@ -1,0 +1,7 @@
+{
+  "id": "overflix",
+  "name": "OverFlix",
+  "description": "Filmes e Séries do OverFlix",
+  "version": "1.0.0",
+  "main": "index.ts"
+}

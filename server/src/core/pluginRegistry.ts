@@ -93,13 +93,14 @@ function wrapPlugin(raw: any): PluginAPI {
 export class PluginRegistry {
   private static plugins: Map<string, PluginAPI> = new Map();
 
-  static loadAll(pluginsDir: string): void {
+  static async loadAll(pluginsDir: string): Promise<void> {
     if (!fs.existsSync(pluginsDir)) {
       fs.mkdirSync(pluginsDir, { recursive: true });
       console.log(`[Plugin] Directory created: ${pluginsDir}`);
       return;
     }
 
+    const { pathToFileURL } = require('url');
     const entries = fs.readdirSync(pluginsDir, { withFileTypes: true });
 
     for (const entry of entries) {
@@ -122,8 +123,8 @@ export class PluginRegistry {
           continue;
         }
 
-        delete require.cache[require.resolve(mainPath)];
-        const mod = require(mainPath);
+        const fileUrl = pathToFileURL(mainPath).href;
+        const mod = await import(fileUrl);
         const raw = mod.default || mod;
 
         // Merge manifest data with plugin logic
@@ -142,7 +143,7 @@ export class PluginRegistry {
         const localExtractorsDir = path.join(pluginPath, 'extractors');
         if (fs.existsSync(localExtractorsDir)) {
           const { ExtractorManager } = require('./extractorManager');
-          ExtractorManager.loadFromDir(localExtractorsDir);
+          await ExtractorManager.loadFromDir(localExtractorsDir);
         }
 
         console.log(`[Plugin] Loaded: ${plugin.name} (${plugin.id})`);

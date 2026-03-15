@@ -243,11 +243,15 @@ export default createPlugin((api) => ({
       for (const link of embedLinks) {
         if (!link) continue;
 
+        const fixed = fixUrl(link);
+        // Filtra domínios que não temos extrator ou que sabemos que não funcionam
+        if (fixed.includes('playembedapi.site')) continue;
+
         // Passa para nossos extratores registrados globalmente ou empurra como raw
         // O servidor lidará com extratores baseados em dominio (embedplay.upns, vidstack) automaticamente.
         linksOut.push({
           name: 'Servidor Externo',
-          url: fixUrl(link),
+          url: fixed,
           quality: 'Auto',
           referer: targetUrl
         });

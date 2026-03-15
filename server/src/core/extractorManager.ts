@@ -12,15 +12,15 @@ export class ExtractorManager {
   private static extractors: Extractor[] = [];
   private static loaded = false;
 
-  static load(): void {
+  static async load(): Promise<void> {
     if (this.loaded) return;
 
     const dir = path.join(__dirname, '..', 'extractors');
-    this.loadFromDir(dir);
+    await this.loadFromDir(dir);
     this.loaded = true;
   }
 
-  static loadFromDir(dir: string): void {
+  static async loadFromDir(dir: string): Promise<void> {
     if (!fs.existsSync(dir)) {
       if (dir.endsWith('extractors') && !dir.includes('plugins')) {
         fs.mkdirSync(dir, { recursive: true });
@@ -29,13 +29,15 @@ export class ExtractorManager {
       return;
     }
 
+    const { pathToFileURL } = require('url');
     const files = fs.readdirSync(dir).filter(f => f.endsWith('.js') || f.endsWith('.ts'));
+    console.log(`[Extractor] Loading from ${dir}: ${files.join(', ')}`);
     for (const file of files) {
       try {
         const fullPath = path.resolve(path.join(dir, file));
-        // Use require on the absolute path
-        delete require.cache[require.resolve(fullPath)];
-        const mod = require(fullPath);
+        const fileUrl = pathToFileURL(fullPath).href;
+        
+        const mod = await import(fileUrl);
         const extractor = mod.default || mod;
 
         if (!extractor.name || !extractor.domains) {
@@ -54,13 +56,13 @@ export class ExtractorManager {
     }
   }
 
-  static getExtractors(): Extractor[] {
-    this.load();
+  static async getExtractors(): Promise<Extractor[]> {
+    await this.load();
     return this.extractors;
   }
 
   static async extract(url: string, forceExtractorName?: string): Promise<StreamLink[] | null> {
-    this.load();
+    await this.load();
 
     if (forceExtractorName) {
       const extractor = this.extractors.find(e => e.name.toLowerCase() === forceExtractorName.toLowerCase());
