@@ -10,6 +10,9 @@ router.get('/settings', (_req, res) => {
       cacheData: getSetting('cacheData') === 'true',
       syncEnabled: getSetting('syncEnabled') === 'true',
       downloadImagesLocally: getSetting('downloadImagesLocally') === 'true',
+      recursiveHomeSync: getSetting('recursiveHomeSync') === 'true',
+      recursiveSeriesSync: getSetting('recursiveSeriesSync') === 'true',
+      recursiveConcurrency: parseInt(getSetting('recursiveConcurrency') || '2', 10),
     };
     
     res.json(settings);
@@ -32,6 +35,15 @@ router.post('/settings', (req, res) => {
     }
     if (typeof updates.downloadImagesLocally === 'boolean') {
       saveSetting('downloadImagesLocally', updates.downloadImagesLocally.toString());
+    }
+    if (typeof updates.recursiveHomeSync === 'boolean') {
+      saveSetting('recursiveHomeSync', updates.recursiveHomeSync.toString());
+    }
+    if (typeof updates.recursiveSeriesSync === 'boolean') {
+      saveSetting('recursiveSeriesSync', updates.recursiveSeriesSync.toString());
+    }
+    if (typeof updates.recursiveConcurrency === 'number') {
+      saveSetting('recursiveConcurrency', Math.min(3, Math.max(1, updates.recursiveConcurrency)).toString());
     }
     
     res.json({ success: true });

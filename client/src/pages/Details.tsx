@@ -7,34 +7,42 @@ import {
   ScrollShadow,
   Spinner,
   Tab,
-  Tabs
+  Tabs,
+  Tooltip
 } from '@heroui/react';
 import {
   Calendar,
   ChevronLeft,
   Clock,
+  CloudDownload,
   Info,
   ListVideo,
   Play,
+  RefreshCcw,
   Star,
-  RefreshCcw
+  CheckCircle
 } from 'lucide-react';
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useRef, useCallback } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import MediaCard from '../components/media/MediaCard';
-import { useSyncStatus } from '../contexts/SyncContext';
+import { useSync } from '../contexts/SyncContext';
+import { useSettings } from '../contexts/SettingsContext';
 import { api, type Episode, type MediaDetails, type StreamLink } from '../services/api';
 
 export default function Details() {
   const { pluginId, url } = useParams<{ pluginId: string; url: string }>();
   const navigate = useNavigate();
-  const { startSync, endSync, failSync } = useSyncStatus();
+  const { startSync, updateProgress, endSync, failSync, cancelSync } = useSync();
+  const { settings } = useSettings();
   const [details, setDetails] = useState<MediaDetails | null>(null);
   const [selectedSeason, setSelectedSeason] = useState<number | null>(null);
   const [episodesCache, setEpisodesCache] = useState<Record<number, Episode[]>>({}); 
+  const [prefetchedSeasons, setPrefetchedSeasons] = useState<Set<number>>(new Set());
   const [loading, setLoading] = useState(true);
   const [loadingEpisodes, setLoadingEpisodes] = useState(false);
   const [preloadedLinks, setPreloadedLinks] = useState<StreamLink[] | null>(null);
+  const hasRecursiveSyncedRef = useRef(false);
+  const abortSeriesRef = useRef<AbortController | null>(null);
 
   const fetchDetails = async (forceFresh = false) => {
     if (!pluginId || !url) return;
@@ -43,6 +51,8 @@ export default function Details() {
       if(!details) setLoading(true);
       if(forceFresh) startSync('Atualizando detalhes...');
       setEpisodesCache({});
+      setPrefetchedSeasons(new Set());
+      hasRecursiveSyncedRef.current = false;
     }
 
     try {
@@ -53,6 +63,22 @@ export default function Details() {
       if (data.type === 'TvSeries' && data.seasons && data.seasons.length > 0) {
         if (selectedSeason === null || forceFresh) setSelectedSeason(data.seasons[0]);
       }
+      
+      // Auto-refresh recommendations if they came empty and this was an initial cached load
+      if (!forceFresh && (!data.recommendations || data.recommendations.length === 0) && !hasSyncedRecsRef.current) {
+        hasSyncedRecsRef.current = true;
+        setTimeout(async () => {
+          try {
+            const freshData = await api.load(pluginId, decodedUrl, true);
+            if (freshData.recommendations && freshData.recommendations.length > 0) {
+              setDetails(prev => prev ? { ...prev, recommendations: freshData.recommendations } : null);
+            }
+          } catch (e) {
+            // Silently fail background recommendation fetch
+          }
+        }, 1500);
+      }
+
       if (forceFresh) endSync();
     } catch (err) {
       console.error('Failed to load details', err);
@@ -62,12 +88,93 @@ export default function Details() {
     }
   };
 
+  // Recursive prefetch all seasons
+  const recursivePrefetchSeasons = useCallback(async (
+    pid: string,
+    rawUrl: string,
+    seasons: number[],
+    concurrency: number,
+  ) => {
+    if (hasRecursiveSyncedRef.current) return;
+    hasRecursiveSyncedRef.current = true;
+
+    const controller = new AbortController();
+    abortSeriesRef.current = controller;
+    const signal = startSync('Pré-carregando temporadas... ');
+
+    let done = 0;
+    const total = seasons.length;
+    const queue = [...seasons];
+
+    const worker = async () => {
+      while (queue.length > 0) {
+        if (signal.aborted || controller.signal.aborted) return;
+        const season = queue.shift()!;
+        try {
+          const decodedUrl = decodeURIComponent(rawUrl);
+          const seasonUrl = decodedUrl.includes('?')
+            ? `${decodedUrl}&requested_season=${season}`
+            : `${decodedUrl}?requested_season=${season}`;
+
+          const data = await api.load(pid, seasonUrl);
+          if (signal.aborted || controller.signal.aborted) return;
+
+          if (data.episodes) {
+            setEpisodesCache(prev => ({
+              ...prev,
+              [season]: data.episodes!,
+            }));
+            setPrefetchedSeasons(prev => new Set(prev).add(season));
+          }
+        } catch {
+          // Skip failed seasons
+        }
+        done++;
+        if (!signal.aborted && !controller.signal.aborted) {
+          updateProgress(done, total);
+        }
+      }
+    };
+
+    const workers = Array.from(
+      { length: Math.min(concurrency, seasons.length) },
+      () => worker()
+    );
+    await Promise.all(workers);
+
+    if (!signal.aborted && !controller.signal.aborted) {
+      endSync();
+    }
+    abortSeriesRef.current = null;
+  }, [startSync, updateProgress, endSync]);
+
+  // Reload all seasons manually
+  const handleReloadAllSeasons = useCallback(async () => {
+    if (!pluginId || !url || !details?.seasons) return;
+    
+    setEpisodesCache({});
+    setPrefetchedSeasons(new Set());
+    hasRecursiveSyncedRef.current = false;
+
+    const concurrency = settings?.recursiveConcurrency ?? 2;
+    await recursivePrefetchSeasons(pluginId, url, details.seasons, concurrency);
+  }, [pluginId, url, details?.seasons, settings?.recursiveConcurrency, recursivePrefetchSeasons]);
+
   useEffect(() => {
+    cancelSync();
+    if (abortSeriesRef.current) {
+      abortSeriesRef.current.abort();
+      abortSeriesRef.current = null;
+    }
+    hasRecursiveSyncedRef.current = false;
+    hasSyncedRecsRef.current = false;
+    setEpisodesCache({});
+    setPrefetchedSeasons(new Set());
     fetchDetails(false);
     window.scrollTo(0, 0);
   }, [pluginId, url]);
 
-  // Efeito para pré-carregar links de filmes
+  // Prefetch movie links
   useEffect(() => {
     if (!pluginId || !details?.url || details.type !== 'Movie') return;
 
@@ -90,14 +197,10 @@ export default function Details() {
     };
   }, [pluginId, details]);
 
-  // Efeito para carregar episódios quando a temporada muda
+  // Load episodes when season changes (normal behavior)
   useEffect(() => {
     if (!pluginId || !url || selectedSeason === null || !details || details.type !== 'TvSeries') return;
-
-    // Se já temos a temporada no cache, não busca novamente
-    if (episodesCache[selectedSeason]) {
-      return;
-    }
+    if (episodesCache[selectedSeason]) return;
 
     const fetchEpisodes = async () => {
       setLoadingEpisodes(true);
@@ -124,6 +227,34 @@ export default function Details() {
     fetchEpisodes();
   }, [pluginId, url, selectedSeason, details?.type, episodesCache]);
 
+  // Background sync for missing recommendations (cache refresh)
+  const hasSyncedRecsRef = useRef(false);
+
+  // Recursive series prefetch after details load
+  useEffect(() => {
+    if (!pluginId || !url || !details || details.type !== 'TvSeries') return;
+    if (!details.seasons || details.seasons.length === 0) return;
+    if (!settings?.recursiveSeriesSync || hasRecursiveSyncedRef.current) return;
+
+    const concurrency = settings?.recursiveConcurrency ?? 2;
+
+    const timer = setTimeout(() => {
+      recursivePrefetchSeasons(pluginId, url, details.seasons!, concurrency);
+    }, 1500);
+
+    return () => clearTimeout(timer);
+  }, [pluginId, url, details, settings?.recursiveSeriesSync, settings?.recursiveConcurrency, recursivePrefetchSeasons]);
+
+  // Cleanup on unmount
+  useEffect(() => {
+    return () => {
+      cancelSync();
+      if (abortSeriesRef.current) {
+        abortSeriesRef.current.abort();
+      }
+    };
+  }, [cancelSync]);
+
   const currentEpisodes = selectedSeason !== null ? episodesCache[selectedSeason] || [] : [];
 
   const handlePlay = (episode?: Episode) => {
@@ -137,7 +268,7 @@ export default function Details() {
     }
 
     navigate(watchUrl, {
-      state: { preloadedLinks: episode ? null : preloadedLinks } // Só usa os links pré-carregados se for filme
+      state: { preloadedLinks: episode ? null : preloadedLinks }
     });
   };
 
@@ -186,12 +317,20 @@ export default function Details() {
         {/* Poster Column */}
         <div className="w-full md:w-[300px] lg:w-[350px] shrink-0">
           <div className="sticky top-24">
-            <Image
-              src={details.posterUrl || 'https://via.placeholder.com/400x600?text=No+Image'}
-              alt={details.name}
-              className="w-full shadow-2xl shadow-primary/10"
-              radius="lg"
-            />
+            {details.posterUrl ? (
+              <Image
+                src={details.posterUrl}
+                alt={details.name}
+                className="w-full shadow-2xl shadow-primary/10"
+                radius="lg"
+              />
+            ) : (
+              <div className="w-full aspect-2/3 flex flex-col items-center justify-center bg-linear-to-br from-primary/20 to-secondary/20 shadow-2xl shadow-primary/10 rounded-xl p-6 text-center">
+                <span className="text-3xl font-black text-white/80 drop-shadow-md leading-tight">
+                  {details.name}
+                </span>
+              </div>
+            )}
 
             {details.type === 'Movie' && (
               <Button
@@ -261,9 +400,31 @@ export default function Details() {
           {/* Episodes Section for Series */}
           {(details.type === 'TvSeries' && details.seasons && details.seasons.length > 0) && (
             <div className="mb-10">
-              <h3 className="text-lg font-bold mb-4 flex items-center gap-2">
-                <ListVideo className="w-4 h-4 text-primary" /> Episódios
-              </h3>
+              <div className="flex items-center justify-between mb-4">
+                <h3 className="text-lg font-bold flex items-center gap-2">
+                  <ListVideo className="w-4 h-4 text-primary" /> Episódios
+                </h3>
+                <div className="flex items-center gap-2">
+                  {prefetchedSeasons.size > 0 && (
+                    <Tooltip content="Temporadas pré-carregadas pelo sync recursivo">
+                      <Chip size="sm" variant="flat" color="success" startContent={<CheckCircle className="w-3 h-3" />}>
+                        {prefetchedSeasons.size}/{details.seasons.length}
+                      </Chip>
+                    </Tooltip>
+                  )}
+                  <Tooltip content="Recarregar todas as temporadas">
+                    <Button
+                      isIconOnly
+                      variant="flat"
+                      size="sm"
+                      color="warning"
+                      onPress={handleReloadAllSeasons}
+                    >
+                      <CloudDownload className="w-4 h-4" />
+                    </Button>
+                  </Tooltip>
+                </div>
+              </div>
               
               <Tabs
                 aria-label="Seasons"
@@ -274,7 +435,17 @@ export default function Details() {
                 onSelectionChange={(key) => setSelectedSeason(parseInt(key.toString()))}
               >
                 {details.seasons.map(season => (
-                  <Tab key={season.toString()} title={`Temporada ${season}`}>
+                  <Tab
+                    key={season.toString()}
+                    title={
+                      <div className="flex items-center gap-1.5">
+                        <span>Temporada {season}</span>
+                        {prefetchedSeasons.has(season) && (
+                          <CheckCircle className="w-3 h-3 text-success" />
+                        )}
+                      </div>
+                    }
+                  >
                     {loadingEpisodes ? (
                       <div className="flex justify-center py-10">
                         <Spinner size="md" label="Carregando episódios..." />
@@ -295,7 +466,12 @@ export default function Details() {
                                     <Play className="w-3 h-3 text-primary fill-primary" />
                                   </div>
                                   <div className="flex-1 overflow-hidden">
-                                    <p className="text-sm font-bold truncate">{ep.name}</p>
+                                    <div className="flex items-center gap-1.5">
+                                      <p className="text-sm font-bold truncate">{ep.name}</p>
+                                      {prefetchedSeasons.has(ep.season) && (
+                                        <CheckCircle className="w-3 h-3 text-success shrink-0" />
+                                      )}
+                                    </div>
                                     <p className="text-[10px] text-default-400">Temp {ep.season} • {ep.episode > 0 ? `Ep ${ep.episode}` : 'Especial'}</p>
                                   </div>
                                 </CardBody>

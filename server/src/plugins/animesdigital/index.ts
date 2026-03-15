@@ -172,36 +172,67 @@ export default createPlugin((api) => ({
 
     const episodes: Episode[] = [];
 
-    // Lógica para carregar episódios (simples, pegando da primeira página)
+    // Lógica para carregar episódios 
+    // Animes na AnimesDigital costumam listar os episódios em '.item_ep a'
     $('.item_ep a').each((_i, el) => {
       const epUrl = $(el).attr('href');
-      const epName = $(el).find('.title_anime').text().trim() || $(el).find('img').attr('title') || '';
-      const epNum = parseInt(epName.match(/(\d+)/)?.[1] || '1');
+      const epName = $(el).find('.title_anime').text().trim() || $(el).attr('title') || '';
+
+      // Tenta extrair o número do episódio do título (ex: "Episódio 12")
+      const epNumMatch = epName.match(/(?:Episódio|Ep)\s*(\d+)/i) || epName.match(/(\d+)/);
+      const epNum = epNumMatch ? parseInt(epNumMatch[1]) : episodes.length + 1;
 
       if (epUrl) {
         episodes.push({
-          name: epName,
-          season: 1,
+          name: epName || `Episódio ${epNum}`,
+          season: 1, // Geralmente animes na animesdigital ficam numa página só
           episode: epNum,
           data: `series|${fixUrl(epUrl)}`
         });
       }
     });
 
-    // Se estiver em uma página de episódio, retorna apenas ele se nada for encontrado
+    // Se estiver em uma página de episódio direto e não achou a lista, retorna apenas ele
     if (episodes.length === 0 && isEpisodePage) {
-      const epNum = parseInt(title.match(/(\d+)/)?.[1] || '1');
-      episodes.push({ name: `Episódio ${epNum}`, season: 1, episode: epNum, data: `series|${url}` });
+      const epNumMatch = title.match(/(?:Episódio|Ep)\s*(\d+)/i) || title.match(/(\d+)/);
+      const epNum = epNumMatch ? parseInt(epNumMatch[1]) : 1;
+      episodes.push({
+        name: `Episódio ${epNum}`,
+        season: 1,
+        episode: epNum,
+        data: `series|${url}`
+      });
+    }
+
+    // Ordena do primeiro pro último
+    episodes.sort((a, b) => a.episode - b.episode);
+
+    // Extrai o link para a temporada inteira se estiver num episódio
+    const recommendations: MediaItem[] = [];
+    if (isEpisodePage) {
+      const allEpsUrl = $('.epsL .subitem a:has(i:contains("menu"))').attr('href') ||
+        $('.epsL .subitem a').last().attr('href'); // fallback
+
+      if (allEpsUrl) {
+        recommendations.push({
+          name: 'Ver Temporada Completa Desse Anime',
+          url: fixUrl(allEpsUrl),
+          type: 'TvSeries',
+          posterUrl: poster,
+        });
+      }
     }
 
     return {
       name: title,
       url,
-      type,
+      type: 'TvSeries',
       posterUrl: poster,
       plot,
       tags,
-      episodes: episodes.sort((a, b) => b.episode - a.episode)
+      seasons: [1], // Obrigatório para a UI de séries
+      episodes,
+      recommendations
     };
   },
 
@@ -236,31 +267,6 @@ export default createPlugin((api) => ({
               referer: 'https://anivideo.net/'
             });
           } catch (e) { console.error("Erro no decode AniVideo", e); }
-        }
-
-        // 2. Caso Base64 do AnimesDigital (Redirecionamento)
-        else if (src.includes('animesdigital.org/aHR0')) {
-          try {
-            // Pega o que está entre 'animesdigital.org/' e a próxima '/'
-            const match = src.match(/animesdigital\.org\/([^/]+)/);
-            if (match) {
-              const decodedUrl = Buffer.from(match[1], 'base64').toString('utf8');
-              const playerRes = await api.request.get(decodedUrl);
-              const $p = api.html.parse(playerRes.data);
-
-              $p('iframe[src]').each((_j, pIframe) => {
-                const pSrc = $p(pIframe).attr('src');
-                if (pSrc) {
-                  links.push({
-                    name: 'Player Alternativo',
-                    url: pSrc,
-                    quality: 'Auto',
-                    referer: 'https://animesdigital.org/'
-                  });
-                }
-              });
-            }
-          } catch (e) { console.error("Erro no decode B64", e); }
         }
 
         // 3. Caso Genérico (Mixdrop, Streamtape, etc)

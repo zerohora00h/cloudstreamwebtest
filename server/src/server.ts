@@ -19,9 +19,47 @@ const BOOT_ID = Date.now().toString(); // ID único para esta sessão do servido
 app.use(cors());
 app.use(express.json());
 
-// Request logger for debugging
+// Smart request logger — groups burst requests into summaries
+const logState = {
+  lastKey: '',
+  count: 0,
+  startTime: 0,
+  timer: null as ReturnType<typeof setTimeout> | null,
+};
+
+function flushLog() {
+  if (logState.count === 0) return;
+  if (logState.count === 1) {
+    console.log(`[Server] ${logState.lastKey}`);
+  } else {
+    const elapsed = ((Date.now() - logState.startTime) / 1000).toFixed(1);
+    console.log(`[Server] ${logState.lastKey} ×${logState.count} (${elapsed}s)`);
+  }
+  logState.count = 0;
+  logState.lastKey = '';
+  logState.timer = null;
+}
+
 app.use((req, res, next) => {
-  console.log(`[Server] ${req.method} ${req.url}`);
+  // Normalize URL to a route pattern for grouping (strip query params)
+  const route = req.url.split('?')[0];
+  const key = `${req.method} ${route}`;
+
+  if (key === logState.lastKey) {
+    logState.count++;
+    // Reset the flush timer — keep buffering while burst continues
+    if (logState.timer) clearTimeout(logState.timer);
+    logState.timer = setTimeout(flushLog, 500);
+  } else {
+    // Different route — flush the previous batch and start a new one
+    if (logState.timer) clearTimeout(logState.timer);
+    flushLog();
+    logState.lastKey = key;
+    logState.count = 1;
+    logState.startTime = Date.now();
+    logState.timer = setTimeout(flushLog, 500);
+  }
+
   next();
 });
 

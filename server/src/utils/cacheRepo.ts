@@ -4,7 +4,7 @@ import db from './db';
 export function getHomeCache(pluginId: string) {
   const stmt = db.prepare('SELECT data, lastUpdated FROM HomeCache WHERE pluginId = ?');
   const result = stmt.get(pluginId) as { data: string; lastUpdated: number } | undefined;
-  
+
   if (result) {
     return { data: JSON.parse(result.data), lastUpdated: result.lastUpdated };
   }
@@ -47,7 +47,7 @@ export function saveMediaCache(pluginId: string, url: string, data: any) {
   `);
   const lastUpdated = Date.now();
   stmt.run(id, pluginId, url, JSON.stringify(data), lastUpdated);
-  console.log(`[Cache] Media details cached: ${pluginId} -> ${url.substring(0, 40)}...`);
+  // console.log(`[Cache] Media details cached: ${pluginId} -> ${url.substring(0, 40)}...`);
 }
 
 // ===== SETTINGS =====
@@ -60,7 +60,7 @@ export function getSetting(key: string): string | null {
 export function saveSetting(key: string, value: string) {
   const stmt = db.prepare('UPDATE Settings SET value = ? WHERE key = ?');
   const result = stmt.run(value, key);
-  
+
   // Se não atualizou, insere
   if (result.changes === 0) {
     const insert = db.prepare('INSERT INTO Settings (key, value) VALUES (?, ?)');

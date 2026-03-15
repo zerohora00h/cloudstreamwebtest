@@ -23,12 +23,20 @@ export default function MediaCard({ item, pluginId }: MediaCardProps) {
       className="group relative w-full aspect-2/3 border-none bg-transparent overflow-hidden"
       radius="lg"
     >
-      <Image
-        removeWrapper
-        alt={item.name}
-        className="z-0 w-full h-full object-cover transition-transform duration-500 group-hover:scale-110"
-        src={item.posterUrl || 'https://via.placeholder.com/300x450?text=No+Image'}
-      />
+      {item.posterUrl ? (
+        <Image
+          removeWrapper
+          alt={item.name}
+          className="z-0 w-full h-full object-cover transition-transform duration-500 group-hover:scale-110"
+          src={item.posterUrl}
+        />
+      ) : (
+        <div className="z-0 w-full h-full flex flex-col items-center justify-center bg-linear-to-br from-primary/20 to-secondary/20 transition-transform duration-500 group-hover:scale-110 p-4 text-center">
+          <span className="text-xl font-bold text-white/80 drop-shadow-md">
+            {item.name}
+          </span>
+        </div>
+      )}
 
       {/* Gradient overlay */}
       <div className="absolute inset-0 z-10 bg-linear-to-t from-black/95 via-black/20 to-transparent opacity-90 group-hover:opacity-100 transition-opacity duration-300" />

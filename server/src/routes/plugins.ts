@@ -157,49 +157,16 @@ pluginRoutes.post('/plugins/:id/links', async (req: Request, res: Response) => {
     const { data } = req.body;
     if (!data) return res.status(400).json({ error: 'Data is required' });
 
-    const plugin = PluginRegistry.getById(req.params.id as string);
+    const pluginId = req.params.id as string;
+    const plugin = PluginRegistry.getById(pluginId);
     if (!plugin) return res.status(404).json({ error: 'Plugin not found' });
 
     const rawLinks = await plugin.loadLinks(data);
     const finalLinks = [];
 
     for (const link of rawLinks) {
-      if (!link.url) { finalLinks.push(link); continue; }
-
-
-      // 1. Try local plugin extractors first (scoped to this plugin)
-      let extracted = null;
-      if (plugin.extractors && plugin.extractors.length > 0) {
-        for (const extractor of plugin.extractors) {
-          if (extractor.domains.some(d => link.url.includes(d))) {
-            try {
-              extracted = await extractor.extract(link.url);
-              if (extracted && extracted.length > 0) {
-                console.log(`[Extractor] Hit: ${extractor.name} (${plugin.id})`);
-                break;
-              }
-            } catch (e: any) {
-              console.error(`[Extractor] Local ${extractor.name} error:`, e.message);
-            }
-          }
-        }
-      }
-
-      // 2. Fallback to global ExtractorManager
-      if (!extracted || extracted.length === 0) {
-        extracted = await ExtractorManager.extract(link.url);
-      }
-
-      if (extracted && extracted.length > 0) {
-        for (const e of extracted) {
-          const proxyUrl = `/api/stream?url=${encodeURIComponent(e.url)}&referer=${encodeURIComponent(e.referer || link.url)}`;
-          finalLinks.push({ ...e, url: proxyUrl });
-        }
-      } else {
-        // Even if not extracted by a separate extractor, proxy the direct link
-        const proxyUrl = `/api/stream?url=${encodeURIComponent(link.url)}&referer=${encodeURIComponent(link.referer || link.url)}`;
-        finalLinks.push({ ...link, url: proxyUrl });
-      }
+      const extracted = await performExtraction(plugin, link);
+      finalLinks.push(...extracted);
     }
 
     res.json(finalLinks);
@@ -208,3 +175,79 @@ pluginRoutes.post('/plugins/:id/links', async (req: Request, res: Response) => {
     res.status(500).json({ error: error.message });
   }
 });
+
+pluginRoutes.post('/plugins/:id/raw-links', async (req: Request, res: Response) => {
+  try {
+    const { data } = req.body;
+    const forceFresh = req.query.fresh === 'true';
+    if (!data) return res.status(400).json({ error: 'Data is required' });
+
+    const plugin = PluginRegistry.getById(req.params.id as string);
+    if (!plugin) return res.status(404).json({ error: 'Plugin not found' });
+
+    // Note: Plugins currently handle their internal request caching. 
+    // We pass any forceFresh hint if the plugin API supports it in the future,
+    // or we just rely on the fact that this call is being explicitly made.
+    const rawLinks = await plugin.loadLinks(data);
+    res.json(rawLinks);
+  } catch (error: any) {
+    console.error(error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+pluginRoutes.post('/plugins/:id/extract', async (req: Request, res: Response) => {
+  try {
+    const { link } = req.body;
+    if (!link || !link.url) return res.status(400).json({ error: 'Link with URL is required' });
+
+    const plugin = PluginRegistry.getById(req.params.id as string);
+    if (!plugin) return res.status(404).json({ error: 'Plugin not found' });
+
+    const extracted = await performExtraction(plugin, link);
+    res.json(extracted);
+  } catch (error: any) {
+    console.error(error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+async function performExtraction(plugin: any, link: any) {
+  if (!link.url) return [link];
+
+  // 1. Try local plugin extractors first (scoped to this plugin)
+  let extracted = null;
+  if (plugin.extractors && plugin.extractors.length > 0) {
+    for (const extractor of plugin.extractors) {
+      if (extractor.domains.some((d: string) => link.url.includes(d))) {
+        try {
+          extracted = await extractor.extract(link.url);
+          if (extracted && extracted.length > 0) {
+            console.log(`[Extractor] Hit: ${extractor.name} (${plugin.id})`);
+            break;
+          }
+        } catch (e: any) {
+          console.error(`[Extractor] Local ${extractor.name} error:`, e.message);
+        }
+      }
+    }
+  }
+
+  // 2. Fallback to global ExtractorManager
+  if (!extracted || extracted.length === 0) {
+    extracted = await ExtractorManager.extract(link.url);
+  }
+
+  if (extracted && extracted.length > 0) {
+    return extracted.map((e: any) => ({
+      ...e,
+      url: `/api/stream?url=${encodeURIComponent(e.url)}&referer=${encodeURIComponent(e.referer || link.url)}`
+    }));
+  } else {
+    // Even if not extracted by a separate extractor, proxy the direct link
+    return [{
+      ...link,
+      url: `/api/stream?url=${encodeURIComponent(link.url)}&referer=${encodeURIComponent(link.referer || link.url)}`
+    }];
+  }
+}

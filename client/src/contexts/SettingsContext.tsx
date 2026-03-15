@@ -6,7 +6,7 @@ import type { AppSettings } from '../services/api';
 interface SettingsContextType {
   settings: AppSettings | null;
   loading: boolean;
-  updateSetting: (key: keyof AppSettings, value: boolean) => Promise<void>;
+  updateSetting: (key: keyof AppSettings, value: boolean | number) => Promise<void>;
 }
 
 const SettingsContext = createContext<SettingsContextType | undefined>(undefined);
@@ -14,7 +14,10 @@ const SettingsContext = createContext<SettingsContextType | undefined>(undefined
 const defaultSettings: AppSettings = {
   cacheData: true,
   syncEnabled: true,
-  downloadImagesLocally: false
+  downloadImagesLocally: false,
+  recursiveHomeSync: false,
+  recursiveSeriesSync: false,
+  recursiveConcurrency: 2,
 };
 
 export const SettingsProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
@@ -36,7 +39,7 @@ export const SettingsProvider: React.FC<{ children: ReactNode }> = ({ children }
     fetchSettings();
   }, []);
 
-  const updateSetting = async (key: keyof AppSettings, value: boolean) => {
+  const updateSetting = async (key: keyof AppSettings, value: boolean | number) => {
     // Optimistic update
     setSettings(prev => prev ? { ...prev, [key]: value } : defaultSettings);
     

@@ -53,6 +53,7 @@ export interface StreamLink {
   url: string;
   quality: string;
   referer?: string;
+  status?: 'raw' | 'extracting' | 'extracted' | 'error';
 }
 
 export interface MultiSearchResult {
@@ -65,6 +66,9 @@ export interface AppSettings {
   cacheData: boolean;
   syncEnabled: boolean;
   downloadImagesLocally: boolean;
+  recursiveHomeSync: boolean;
+  recursiveSeriesSync: boolean;
+  recursiveConcurrency: number;
 }
 
 export const api = {
@@ -123,6 +127,25 @@ export const api = {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ data }),
+    });
+    return res.json();
+  },
+
+  async getRawLinks(pluginId: string, data: string, forceFresh = false): Promise<StreamLink[]> {
+    const freshQuery = forceFresh ? '?fresh=true' : '';
+    const res = await fetch(`${API_BASE}/plugins/${pluginId}/raw-links${freshQuery}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ data }),
+    });
+    return res.json();
+  },
+
+  async extractLink(pluginId: string, link: StreamLink): Promise<StreamLink[]> {
+    const res = await fetch(`${API_BASE}/plugins/${pluginId}/extract`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ link }),
     });
     return res.json();
   },

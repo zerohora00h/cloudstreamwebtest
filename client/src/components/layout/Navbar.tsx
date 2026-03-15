@@ -15,7 +15,8 @@ import {
   ModalBody,
   ModalFooter,
   useDisclosure,
-  Switch
+  Switch,
+  Slider
 } from '@heroui/react';
 import { Play, Puzzle, Search, Settings } from 'lucide-react';
 import { useState } from 'react';
@@ -182,6 +183,62 @@ export default function Navbar() {
                         isSelected={settings.downloadImagesLocally}
                         onValueChange={(val) => updateSetting('downloadImagesLocally', val)}
                       />
+                    </div>
+
+                    <div className="border-t border-white/5 pt-4">
+                      <p className="text-xs text-default-400 uppercase tracking-wider mb-4 font-semibold">Pré-Carregamento Recursivo</p>
+
+                      <div className="flex flex-col gap-5">
+                        <div className="flex items-center justify-between">
+                          <div className="flex flex-col gap-1">
+                            <p className="text-sm font-medium">Home Recursiva</p>
+                            <p className="text-xs text-default-500">Pré-carregar detalhes de todos os itens da Home automaticamente</p>
+                          </div>
+                          <Switch 
+                            size="sm" 
+                            color="warning"
+                            isSelected={settings.recursiveHomeSync}
+                            onValueChange={(val) => updateSetting('recursiveHomeSync', val)}
+                          />
+                        </div>
+
+                        <div className="flex items-center justify-between">
+                          <div className="flex flex-col gap-1">
+                            <p className="text-sm font-medium">Séries Recursiva</p>
+                            <p className="text-xs text-default-500">Pré-carregar episódios de todas as temporadas ao abrir uma série</p>
+                          </div>
+                          <Switch 
+                            size="sm" 
+                            color="warning"
+                            isSelected={settings.recursiveSeriesSync}
+                            onValueChange={(val) => updateSetting('recursiveSeriesSync', val)}
+                          />
+                        </div>
+
+                        <div className="flex flex-col gap-2">
+                          <div className="flex flex-col gap-1">
+                            <p className="text-sm font-medium">Carregamentos Simultâneos</p>
+                            <p className="text-xs text-default-500">Quantidade de requisições paralelas durante o pré-carregamento</p>
+                          </div>
+                          <Slider
+                            size="sm"
+                            step={1}
+                            minValue={1}
+                            maxValue={3}
+                            value={settings.recursiveConcurrency}
+                            onChange={(val) => updateSetting('recursiveConcurrency', val as number)}
+                            color="warning"
+                            showSteps
+                            marks={[
+                              { value: 1, label: '1' },
+                              { value: 2, label: '2' },
+                              { value: 3, label: '3' },
+                            ]}
+                            className="max-w-full"
+                            isDisabled={!settings.recursiveHomeSync && !settings.recursiveSeriesSync}
+                          />
+                        </div>
+                      </div>
                     </div>
                   </div>
                 ) : (

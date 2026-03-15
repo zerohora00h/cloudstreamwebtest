@@ -1,5 +1,5 @@
 import { createPlugin } from '@plugin-api';
-import type { HomeSection, MediaDetails, MediaItem, StreamLink } from '@shared/types';
+import type { Episode, HomeSection, MediaDetails, MediaItem, StreamLink } from '@shared/types';
 
 const mainUrl = 'https://cnvsweb.stream';
 
@@ -70,7 +70,8 @@ export default createPlugin((api) => ({
           const isSeries = item.time?.toLowerCase().includes('temporadas');
           return {
             name: item.title?.replace(/[\n\r]+/g, ' ').trim() || '',
-            url: fixUrl(`/watch/${item.slug}`),
+            // Ajuste 1: Rota corrigida para garantir que séries não caiam na lógica de filmes
+            url: fixUrl(isSeries ? `/series/${item.slug}` : `/watch/${item.slug}`),
             type: isSeries ? 'TvSeries' : 'Movie',
             posterUrl: item.image ? item.image.replace('/w300/', '/original/') : '',
             year: parseInt(item.release) || null,
@@ -96,8 +97,9 @@ export default createPlugin((api) => ({
 
     $('section.listContent .item.poster').each((_i, el) => {
       const a = $(el).find('a.btn.free, a.btn.free.fw-bold').first();
-      const href = a.attr('href');
+      let href = a.attr('href');
       if (!href) return;
+      href = fixUrl(href);
 
       const title = $(el).find('h6').first().text().replace(/[\n\r]+/g, ' ').trim();
       if (!title) return;
@@ -128,10 +130,15 @@ export default createPlugin((api) => ({
     const name = $('h1.fw-bolder').first().text().replace(/[\n\r]+/g, ' ').trim();
     const plot = $('p.small.linefive').first().text().trim();
     const yearText = $('p.log span').text();
-    const year = parseInt(yearText) || null;
+    const yearMatch = yearText.match(/\d{4}/);
+    const year = yearMatch ? parseInt(yearMatch[0]) : null;
+
+    const seasonsElement = $('#seasons-view');
+    // Séries podem vir como /series/ ou /watch/, então verificamos o elemento de temporadas também
+    const isSerie = url.includes('/series/') || (url.includes('/watch/') && seasonsElement.length > 0);
 
     const posterStyle = $('.backImage').first().attr('style') || '';
-    const posterMatch = posterStyle.match(/url\('(.+?)'\)/);
+    const posterMatch = posterStyle.match(/url\(['"]?([^'"]+)['"]?\)/);
     const posterUrl = posterMatch ? posterMatch[1].replace('/w300/', '/original/') : '';
 
     const tags: string[] = [];
@@ -149,47 +156,116 @@ export default createPlugin((api) => ({
     const durationText = $('span').filter((_i, e) => $(e).text().toLowerCase().includes('min')).text();
     const duration = parseInt(durationText.toLowerCase().replace('min', '').trim()) || null;
 
-    const isSerie = url.includes('/series') || $('#seasons-view').length > 0;
+    const recommendations: MediaItem[] = [];
+    $('div.swiper-slide.item').each((_i, el) => {
+      const recTitle = $(el).find('h6').first().text().trim();
+      const recHref = $(el).find('div.buttons a').first().attr('href');
+      if (!recTitle || !recHref) return;
+
+      const recStyle = $(el).find('div.content').first().attr('style') || '';
+      const recPosterMatch = recStyle.match(/url\(['"]?([^'"]+)['"]?\)/);
+      const recPoster = recPosterMatch ? recPosterMatch[1].replace('/w300/', '/original/') : '';
+
+      const isRecSeries = $(el).find('div.tags span').filter((_j, e) => $(e).text().toLowerCase().includes('temporada')).length > 0;
+
+      recommendations.push({
+        name: recTitle,
+        url: fixUrl(recHref),
+        type: isRecSeries ? 'TvSeries' : 'Movie',
+        posterUrl: recPoster
+      });
+    });
 
     if (isSerie) {
-      const episodes: { name: string; episode: number; season: number; data: string }[] = [];
-      const seasons = $('#seasons-view option').map((_i, el) => $(el).attr('value')).get();
+      const episodes: Episode[] = [];
+      const seasonNumbers: number[] = [];
+      const seasonsData: string[] = [];
+      
+      $('#seasons-view option').each((_i, el) => {
+        const val = $(el).attr('value');
+        if (val) {
+          seasonsData.push(val);
+          seasonNumbers.push(_i + 1);
+        }
+      });
 
-      for (let i = 0; i < seasons.length; i++) {
-        const seasonId = seasons[i];
-        const seasonNumber = i + 1;
+      const extractFromHtml = (htmlContent: string, sNum: number) => {
+        const $eps = api.html.parse(htmlContent);
+        $eps('div.ep').each((_j, el) => {
+          const epNumRaw = $eps(el).find('p').first().text().trim();
+          const epNum = parseInt(epNumRaw) || (_j + 1);
 
-        try {
-          const epUrl = `${mainUrl}/ajax/episodes.php?season=${seasonId}&page=1`;
-          const epRes = await api.request.get(epUrl, { headers: { ...getHeaders(), Referer: url } });
-          const $ep = api.html.parse(epRes.data);
+          const epName = $eps(el).find('h5').first().text().replace(/[\n\r]+/g, ' ').trim() || `Episódio ${epNum}`;
+          const playBtn = $eps(el).find('a[href*="/s/"], a[href*="/m/"]').first();
+          let episodeUrl = playBtn.attr('href');
 
-          $ep('div.ep').each((_j, el) => {
-            const epNumText = $ep(el).find('p[number]').attr('number') || $ep(el).find('p[number]').text();
-            const epNum = parseInt(epNumText || '') || 0;
-            const epName = $ep(el).find('h5.fw-bold').text().replace(/[\n\r]+/g, ' ').trim() || `Episódio ${epNum}`;
-            const playBtn = $ep(el).find('a.btn.free.fw-bold, a.btn.free').first();
-            const episodeUrl = playBtn.attr('href');
+          if (episodeUrl) {
+            const fixedEpUrl = episodeUrl.startsWith('http') 
+              ? episodeUrl 
+              : `http://www.playcnvs.stream${episodeUrl.startsWith('/') ? '' : '/'}${episodeUrl}`;
 
-            if (episodeUrl) {
-              episodes.push({ name: epName, episode: epNum, season: seasonNumber, data: episodeUrl });
+            episodes.push({
+              name: epName,
+              episode: epNum,
+              season: sNum,
+              data: fixedEpUrl
+            });
+          }
+        });
+      };
+
+      // Padrão PobreFlix: Carrega temporadas sob demanda se solicitado
+      let requestedSeason: number | null = null;
+      try {
+        const urlParams = new URL(url).searchParams;
+        const requested = urlParams.get('requested_season');
+        if (requested) requestedSeason = parseInt(requested);
+      } catch (e) {}
+
+      if (requestedSeason) {
+        // Busca a temporada específica via AJAX
+        const idx = requestedSeason - 1;
+        if (idx >= 0 && idx < seasonsData.length) {
+          try {
+            const seasonId = seasonsData[idx];
+            const epUrl = `${mainUrl}/ajax/episodes.php?season=${seasonId}&page=1`;
+            const epRes = await api.request.get(epUrl, { headers: { ...getHeaders(), Referer: url } });
+            
+            let htmlData = epRes.data;
+            if (typeof htmlData === 'object' && htmlData !== null) {
+              htmlData = htmlData.html || JSON.stringify(htmlData);
             }
-          });
-        } catch (e: any) {
-          console.error('Erro ao buscar temporada:', e.message);
+            extractFromHtml(typeof htmlData === 'string' ? htmlData : epRes.data, requestedSeason);
+          } catch (e: any) {
+            console.error(`Erro temp ${requestedSeason}:`, e.message);
+          }
+        }
+      } else {
+        // Primeiro carregamento: tenta pegar da página (Season 1) ou AJAX da primeira temporada
+        extractFromHtml(res.data, 1);
+        
+        // Se a página não tinha episódios, busca a primeira temporada via AJAX
+        if (episodes.length === 0 && seasonsData.length > 0) {
+          try {
+            const seasonId = seasonsData[0];
+            const epUrl = `${mainUrl}/ajax/episodes.php?season=${seasonId}&page=1`;
+            const epRes = await api.request.get(epUrl, { headers: { ...getHeaders(), Referer: url } });
+            extractFromHtml(epRes.data, 1);
+          } catch (e) {}
         }
       }
 
-      return { name, url, type: 'TvSeries', posterUrl, plot, year, tags, score, duration, episodes };
+      return { 
+        name, url, type: 'TvSeries', posterUrl, plot, year, tags, score, duration, 
+        seasons: seasonNumbers,
+        episodes, 
+        recommendations 
+      };
     } else {
-      const watchBtn = $('div.buttons a.btn.free[href*="/m/"]').first();
-      const watchUrl = watchBtn.attr('href');
-      let dataUrl = url;
-      if (watchUrl) {
-        dataUrl = watchUrl.startsWith('http') ? watchUrl : `http://www.playcnvs.stream${watchUrl}`;
-      }
+      const watchBtn = $('a[href*="/m/"]').first();
+      const dataUrl = watchBtn.attr('href') ? fixUrl(watchBtn.attr('href')!) : url;
 
-      return { name, url, type: 'Movie', posterUrl, plot, year, tags, score, duration, dataUrl };
+      return { name, url, type: 'Movie', posterUrl, plot, year, tags, score, duration, dataUrl, recommendations };
     }
   },
 
@@ -197,54 +273,46 @@ export default createPlugin((api) => ({
     const episodeUrl = data.startsWith('[') ? data.replace(/^\["?|"?\]$/g, '').split('|').pop()! : data;
 
     try {
-      const baseHeaders = getHeaders();
+      const baseHeaders = {
+        ...getHeaders(),
+        'Referer': mainUrl
+      };
       const res = await api.request.get(episodeUrl, { headers: baseHeaders });
       const $ = api.html.parse(res.data);
       const sourceUrls: { name: string; url: string }[] = [];
 
-      // 1. Pega as URLs dos players disponíveis
-      $('.sources-dropdown .dropdown-menu a.source-btn').each((_i, el) => {
+      $('.sources-dropdown a, .dropdown-menu a, .sources-dropdown .dropdown-menu a.source-btn').each((_i, el) => {
         const href = $(el).attr('href');
+        if (!href || href.startsWith('#')) return;
+
         let tagTxt = $(el).clone().children().remove().end().text().trim();
         if (!tagTxt) tagTxt = $(el).text().replace($(el).find('label').text(), '').trim();
 
         const badge = $(el).find('label.badge').text().trim();
-        const linkName = badge ? `${tagTxt} (${badge})` : tagTxt;
+        const linkName = badge ? `${tagTxt} (${badge})` : (tagTxt || `Source ${_i + 1}`);
 
-        if (href && !href.startsWith('#')) {
-          const abs = href.startsWith('http') ? href : `http://www.playcnvs.stream${href}`;
-          sourceUrls.push({ name: linkName, url: abs });
-        }
+        if (linkName.toLowerCase().includes('premium')) return;
+
+        const abs = href.startsWith('http') ? href : `http://www.playcnvs.stream${href.startsWith('/') ? '' : '/'}${href}`;
+        sourceUrls.push({ name: linkName, url: abs });
       });
-
-      if (sourceUrls.length === 0) {
-        $('a.btn.free').each((_i, el) => {
-          const href = $(el).attr('href');
-          if (href && (href.includes('/s/') || href.includes('/m/')) && !href.includes('history.go')) {
-            const abs = fixUrl(href);
-            sourceUrls.push({ name: $(el).text().trim(), url: abs });
-          }
-        });
-      }
 
       const sortedSources = sourceUrls.sort((a, b) => b.name.toLowerCase().includes('4k') ? 1 : -1);
       const finalLinks: StreamLink[] = [];
 
-      // Regex corrigido
       const patterns = [
         /initializePlayerWithSubtitle\(['"]([^'"]*\.(?:mp4|m3u8)[^'"]*)['"],\s*['"]([^'"]*\.srt[^'"]*)['"]/,
         /initializePlayer\(['"]([^'"]*\.(?:mp4|m3u8)[^'"]*)['"]/,
         /file:\s*['"]([^'"]*\.(?:mp4|m3u8)[^'"]*)['"]/,
         /src:\s*['"]([^'"]*\.(?:mp4|m3u8)[^'"]*)['"]/,
         /["']?file["']?\s*:\s*["']([^"']+)["']/,
-        /["']?url["']?\s*:\s*["']([^"']+)["']/
+        /["']?url["']?\s*:\s*["']([^"']+)["']/,
+        /videoSources\s*=\s*\[{.*?file:\s*["'](.*?)["']/s
       ];
 
-      // 2. Extrai o link de vídeo real de cada source resolvido
       for (const source of sortedSources) {
         try {
           const pRes = await api.request.get(source.url, {
-            // Referer correto para evitar block 403
             headers: { ...baseHeaders, 'Referer': episodeUrl }
           });
 

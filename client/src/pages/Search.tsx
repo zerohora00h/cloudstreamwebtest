@@ -5,6 +5,10 @@ import { useSearchParams } from 'react-router-dom';
 import MediaCarousel from '../components/media/MediaCarousel';
 import { api, type MultiSearchResult } from '../services/api';
 
+// Cache em memória que sobrevive à desmontagem do componente, 
+// mas é limpo no reload (F5) ou fechamento da aba.
+const searchCache = new Map<string, MultiSearchResult[]>();
+
 export default function Search() {
   const [searchParams] = useSearchParams();
   const query = searchParams.get('q') || '';
@@ -14,10 +18,16 @@ export default function Search() {
   useEffect(() => {
     if (!query) return;
 
+    if (searchCache.has(query)) {
+      setResults(searchCache.get(query)!);
+      return;
+    }
+
     const performSearch = async () => {
       setLoading(true);
       try {
         const data = await api.searchAll(query);
+        searchCache.set(query, data);
         setResults(data);
       } catch (err) {
         console.error('Search failed', err);

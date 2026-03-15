@@ -44,6 +44,9 @@ export function initDB() {
   insertSetting.run('cacheData', 'true');
   insertSetting.run('syncEnabled', 'true');
   insertSetting.run('downloadImagesLocally', 'false');
+  insertSetting.run('recursiveHomeSync', 'false');
+  insertSetting.run('recursiveSeriesSync', 'false');
+  insertSetting.run('recursiveConcurrency', '2');
 }
 
 export default db;

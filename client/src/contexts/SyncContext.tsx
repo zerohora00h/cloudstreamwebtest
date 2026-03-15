@@ -1,46 +1,86 @@
-import { createContext, useContext, useCallback, useState, type ReactNode } from 'react';
-import { Loader2, CheckCircle2 } from 'lucide-react';
+import { createContext, useContext, useCallback, useState, useRef, type ReactNode } from 'react';
+import { Loader2, CheckCircle2, X } from 'lucide-react';
 
 type SyncStatus = 'idle' | 'syncing' | 'done';
 
+interface SyncProgress {
+  current: number;
+  total: number;
+}
+
 interface SyncContextType {
   syncStatus: SyncStatus;
-  startSync: (message?: string) => void;
+  progress: SyncProgress | null;
+  startSync: (message?: string) => AbortSignal;
+  updateProgress: (current: number, total: number) => void;
   endSync: () => void;
   failSync: () => void;
+  cancelSync: () => void;
 }
 
 const SyncContext = createContext<SyncContextType>({
   syncStatus: 'idle',
-  startSync: () => {},
+  progress: null,
+  startSync: () => new AbortController().signal,
+  updateProgress: () => {},
   endSync: () => {},
   failSync: () => {},
+  cancelSync: () => {},
 });
 
-export function useSyncStatus() {
+export function useSync() {
   return useContext(SyncContext);
 }
 
 export function SyncProvider({ children }: { children: ReactNode }) {
   const [syncStatus, setSyncStatus] = useState<SyncStatus>('idle');
   const [message, setMessage] = useState('Verificando novidades...');
+  const [progress, setProgress] = useState<SyncProgress | null>(null);
+  const abortRef = useRef<AbortController | null>(null);
+
+  const cancelSync = useCallback(() => {
+    if (abortRef.current) {
+      abortRef.current.abort();
+      abortRef.current = null;
+    }
+    setProgress(null);
+    setSyncStatus('idle');
+  }, []);
 
   const startSync = useCallback((msg?: string) => {
+    // Abort any previous sync
+    if (abortRef.current) {
+      abortRef.current.abort();
+    }
+
+    const controller = new AbortController();
+    abortRef.current = controller;
     setMessage(msg || 'Verificando novidades...');
+    setProgress(null);
     setSyncStatus('syncing');
+
+    return controller.signal;
+  }, []);
+
+  const updateProgress = useCallback((current: number, total: number) => {
+    setProgress({ current, total });
   }, []);
 
   const endSync = useCallback(() => {
+    abortRef.current = null;
+    setProgress(null);
     setSyncStatus('done');
     setTimeout(() => setSyncStatus('idle'), 2500);
   }, []);
 
   const failSync = useCallback(() => {
+    abortRef.current = null;
+    setProgress(null);
     setSyncStatus('idle');
   }, []);
 
   return (
-    <SyncContext.Provider value={{ syncStatus, startSync, endSync, failSync }}>
+    <SyncContext.Provider value={{ syncStatus, progress, startSync, updateProgress, endSync, failSync, cancelSync }}>
       {children}
 
       {syncStatus !== 'idle' && (
@@ -54,7 +94,23 @@ export function SyncProvider({ children }: { children: ReactNode }) {
           {syncStatus === 'syncing' ? (
             <>
               <Loader2 className="w-4 h-4 text-primary animate-spin" />
-              <span className="text-sm text-default-400">{message}</span>
+              <span className="text-sm text-default-400">
+                {message}
+                {progress && (
+                  <span className="text-primary font-semibold ml-1">
+                    {progress.current} / {progress.total}
+                  </span>
+                )}
+              </span>
+              {progress && (
+                <button
+                  onClick={cancelSync}
+                  className="ml-2 p-0.5 rounded-md hover:bg-white/10 transition-colors text-default-500 hover:text-danger cursor-pointer"
+                  title="Cancelar"
+                >
+                  <X className="w-3.5 h-3.5" />
+                </button>
+              )}
             </>
           ) : (
             <>

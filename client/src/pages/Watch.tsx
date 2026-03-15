@@ -13,14 +13,14 @@ import {
   Tv,
   Play,
   AlertCircle,
-  ChevronLeft
+  ChevronLeft,
+  Loader2
 } from 'lucide-react';
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useRef, useCallback } from 'react';
 import { useLocation, useNavigate, useSearchParams } from 'react-router-dom';
 import VideoPlayer from '../components/VideoPlayer';
 import { api, type Episode, type MediaDetails, type StreamLink } from '../services/api';
 
-// Cache simples em memória para detalhes carregados no Player
 const detailsCache: Record<string, MediaDetails> = {};
 
 export default function Watch() {
@@ -37,26 +37,34 @@ export default function Watch() {
   const location = useLocation();
   const preloadedLinks = location.state?.preloadedLinks as StreamLink[] | undefined;
 
-  const [links, setLinks] = useState<StreamLink[]>(preloadedLinks || []);
-  const [activeLink, setActiveLink] = useState<StreamLink | null>(preloadedLinks?.[0] || null);
-  const [loading, setLoading] = useState(!preloadedLinks);
+  const [links, setLinks] = useState<StreamLink[]>([]);
+  const [activeLink, setActiveLink] = useState<StreamLink | null>(null);
+  const [loadingLinks, setLoadingLinks] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
   const [mediaDetails, setMediaDetails] = useState<MediaDetails | null>(
     originalUrl ? detailsCache[originalUrl] || null : null
   );
   const [loadingDetails, setLoadingDetails] = useState(false);
+  
+  const extractingRef = useRef<Set<string>>(new Set());
 
-  // Busca links de vídeo se não vieram preloaded
+  // 1. Busca os links brutos (rápido)
   useEffect(() => {
     if (!pluginId || !data) return;
-    if (preloadedLinks && preloadedLinks.length > 0) return;
 
-    const fetchLinks = async () => {
-      setLoading(true);
+    const fetchRawLinks = async () => {
+      setLoadingLinks(true);
       setError(null);
       try {
-        const result = await api.loadLinks(pluginId, data);
+        let result: StreamLink[] = [];
+        if (preloadedLinks && preloadedLinks.length > 0) {
+          result = preloadedLinks.map(l => ({ ...l, status: 'extracted' }));
+        } else {
+          result = await api.getRawLinks(pluginId, data);
+          result = result.map(l => ({ ...l, status: 'raw' }));
+        }
+
         if (result.length > 0) {
           setLinks(result);
           setActiveLink(result[0]);
@@ -64,17 +72,76 @@ export default function Watch() {
           setError('Nenhum link de streaming encontrado.');
         }
       } catch (err) {
-        console.error('Failed to load links', err);
+        console.error('Failed to load raw links', err);
         setError('Erro ao carregar os servidores de vídeo.');
       } finally {
-        setLoading(false);
+        setLoadingLinks(false);
       }
     };
 
-    fetchLinks();
+    fetchRawLinks();
   }, [pluginId, data, preloadedLinks]);
 
-  // Busca detalhes em background para exibir temporadas/episodios
+  // 2. Lógica de Extração Progressiva
+  const extractOne = useCallback(async (linkToExtract: StreamLink) => {
+    if (!pluginId || !linkToExtract.url || linkToExtract.status !== 'raw') return;
+    if (extractingRef.current.has(linkToExtract.url)) return;
+
+    extractingRef.current.add(linkToExtract.url);
+    
+    // Atualiza status para extracting
+    setLinks(prev => prev.map(l => l.url === linkToExtract.url ? { ...l, status: 'extracting' } : l));
+    if (activeLink?.url === linkToExtract.url) {
+        setActiveLink(prev => prev ? { ...prev, status: 'extracting' } : null);
+    }
+
+    try {
+      const result = await api.extractLink(pluginId, linkToExtract);
+      if (result && result.length > 0) {
+        const extracted = { ...result[0], status: 'extracted' as const };
+        
+        setLinks(prev => {
+            const index = prev.findIndex(l => l.url === linkToExtract.url);
+            if (index === -1) return prev;
+            
+            const newLinks = [...prev];
+            newLinks[index] = extracted;
+            return newLinks;
+        });
+
+        setActiveLink(prev => prev?.url === linkToExtract.url ? extracted : prev);
+      } else {
+        throw new Error('Extraction failed');
+      }
+    } catch (err) {
+      console.error('Extraction error', err);
+      setLinks(prev => prev.map(l => l.url === linkToExtract.url ? { ...l, status: 'error' } : l));
+      if (activeLink?.url === linkToExtract.url) {
+        setActiveLink(prev => prev ? { ...prev, status: 'error' } : null);
+      }
+    } finally {
+      extractingRef.current.delete(linkToExtract.url);
+    }
+  }, [pluginId, activeLink]);
+
+  // Efeito para priorizar o link ativo e processar a fila
+  useEffect(() => {
+    if (loadingLinks || links.length === 0) return;
+
+    if (activeLink && activeLink.status === 'raw') {
+        extractOne(activeLink);
+        return;
+    }
+
+    const nextInQueue = links.find(l => l.status === 'raw');
+    if (nextInQueue) {
+        extractOne(nextInQueue);
+    }
+  }, [links, activeLink, loadingLinks, extractOne]);
+
+
+
+  // 4. Busca detalhes em background para exibir temporadas/episodios
   useEffect(() => {
     if (!pluginId || !originalUrl) return;
 
@@ -85,7 +152,6 @@ export default function Watch() {
         : `${fetchUrl}?requested_season=${seasonParam}`;
     }
 
-    // Se já temos no cache para esta URL exata, não precisa buscar
     if (detailsCache[fetchUrl] || mediaDetails) return;
 
     let isMounted = true;
@@ -95,7 +161,7 @@ export default function Watch() {
         const decodedUrl = decodeURIComponent(fetchUrl);
         const data = await api.load(pluginId, decodedUrl);
         if (isMounted) {
-          detailsCache[fetchUrl] = data; // Atualiza cache global
+          detailsCache[fetchUrl] = data; 
           setMediaDetails(data);
         }
       } catch (err) {
@@ -106,10 +172,7 @@ export default function Watch() {
     };
 
     fetchBackgroundDetails();
-
-    return () => {
-      isMounted = false;
-    };
+    return () => { isMounted = false; };
   }, [pluginId, originalUrl, seasonParam, mediaDetails]);
 
   const handlePlayEpisode = (ep: Episode) => {
@@ -121,21 +184,22 @@ export default function Watch() {
     navigate(watchUrl);
   };
 
-  // Lógica de "Próximo Episódio"
-  let nextEpisode: Episode | null = null;
-  if (mediaDetails?.type === 'TvSeries' && mediaDetails.episodes && seasonParam && episodeParam) {
-    const currentSeason = parseInt(seasonParam);
-    const currentEpisode = parseInt(episodeParam);
-    nextEpisode = mediaDetails.episodes.find(ep => ep.season === currentSeason && ep.episode === currentEpisode + 1) || null;
-  }
+  const getLinkStatusIcon = (status?: string) => {
+    switch (status) {
+      case 'extracting': return <Loader2 className="w-3 h-3 text-primary animate-spin" />;
+      case 'error': return <AlertCircle className="w-3 h-3 text-danger" />;
+      default: return null;
+    }
+  };
 
-  if (loading && !preloadedLinks) {
-    return (
-      <div className="flex flex-col items-center justify-center py-40 gap-4">
-        <Spinner size="lg" color="primary" label="Buscando servidores..." />
-      </div>
-    );
-  }
+  const getLinkStatusText = (status?: string) => {
+    switch (status) {
+      case 'extracting': return 'Extraindo...';
+      case 'extracted': return 'Pronto';
+      case 'error': return 'Erro';
+      default: return 'Na fila';
+    }
+  };
 
   return (
     <div className="animate-in fade-in duration-1000">
@@ -156,20 +220,45 @@ export default function Watch() {
         {/* Player Column */}
         <div className="flex-1 min-w-0">
           <div className="aspect-video bg-black rounded-xl overflow-hidden shadow-2xl ring-1 ring-white/10 relative group">
-            {activeLink ? (
+            {activeLink && activeLink.status === 'extracted' ? (
               <VideoPlayer
                 url={activeLink.url}
                 title={title}
               />
             ) : (
-              <div className="w-full h-full flex flex-col items-center justify-center bg-black/80 gap-3">
-                <AlertCircle className="w-12 h-12 text-danger" />
-                <p className="text-lg font-medium">{error || 'Selecione um servidor'}</p>
-                <Button color="primary" variant="flat" onPress={() => navigate(-1)}>Voltar</Button>
+              <div className="w-full h-full flex flex-col items-center justify-center bg-zinc-900/50 backdrop-blur-sm gap-4">
+                {activeLink?.status === 'error' ? (
+                  <>
+                    <AlertCircle className="w-12 h-12 text-danger" />
+                    <p className="text-lg font-medium">Falha ao extrair este link.</p>
+                    <Button color="primary" variant="flat" onPress={() => navigate(-1)}>Voltar</Button>
+                  </>
+                ) : (
+                  <>
+                    <div className="relative">
+                        <div className="w-20 h-20 rounded-full border-4 border-primary/20 border-t-primary animate-spin" />
+                        <Server className="w-8 h-8 text-primary absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2" />
+                    </div>
+                    <div className="text-center space-y-1">
+                        <p className="text-xl font-bold text-white">
+                            {activeLink?.status === 'extracting' ? 'Extraindo link direto...' : 'Preparando servidor...'}
+                        </p>
+                        <p className="text-default-400 text-sm italic">
+                            {activeLink?.name} • {activeLink?.quality}
+                        </p>
+                    </div>
+                  </>
+                )}
               </div>
             )}
+            
+            {loadingLinks && (
+                <div className="absolute inset-0 z-50 flex flex-col items-center justify-center bg-black/60 backdrop-blur-md">
+                     <Spinner size="lg" color="primary" label="Buscando lista de servidores..." />
+                </div>
+            )}
 
-            {error && !loading && !activeLink && (
+            {error && !loadingLinks && links.length === 0 && (
               <div className="absolute inset-0 flex flex-col items-center justify-center bg-black/80 gap-3 z-50">
                 <AlertCircle className="w-12 h-12 text-danger" />
                 <p className="text-lg font-medium">{error}</p>
@@ -185,13 +274,18 @@ export default function Watch() {
               </div>
               <div>
                 <p className="text-xs text-default-400">Servidor Ativo</p>
-                <p className="font-bold">{activeLink?.name || 'Automático'}</p>
+                <p className="font-bold">{activeLink?.name || 'Iniciando...'}</p>
               </div>
             </div>
 
             <div className="flex gap-2">
-              <Chip variant="flat" size="sm" color="success">
-                {activeLink?.quality || 'Auto'}
+              <Chip 
+                variant="flat" 
+                size="sm" 
+                color={activeLink?.status === 'extracted' ? 'success' : 'warning'}
+                className="font-bold"
+              >
+                {activeLink?.status === 'extracted' ? activeLink.quality : getLinkStatusText(activeLink?.status)}
               </Chip>
               <Chip variant="flat" size="sm" className="bg-white/5 opacity-50">
                 Premium Player (Vidstack)
@@ -227,9 +321,20 @@ export default function Watch() {
                 {links.map((link: StreamLink, idx: number) => (
                   <ListboxItem
                     key={link.url}
-                    description={link.quality}
+                    description={
+                        <div className="flex items-center gap-2">
+                            <span>{link.quality}</span>
+                            <span className="text-[10px] opacity-50">•</span>
+                            <span className={`text-[10px] ${link.status === 'extracted' ? 'text-success' : link.status === 'error' ? 'text-danger' : 'text-default-400'}`}>
+                                {getLinkStatusText(link.status)}
+                            </span>
+                        </div>
+                    }
                     startContent={
-                      <div className={`w-2 h-2 rounded-full ${activeLink?.url === link.url ? 'bg-primary' : 'bg-default-300'}`} />
+                      <div className="flex items-center gap-2">
+                        <div className={`w-2 h-2 rounded-full shrink-0 ${activeLink?.url === link.url ? 'bg-primary' : 'bg-default-300'}`} />
+                        {getLinkStatusIcon(link.status)}
+                      </div>
                     }
                   >
                     {link.name || `Servidor ${idx + 1}`}
@@ -237,25 +342,32 @@ export default function Watch() {
                 ))}
               </Listbox>
 
-              {links.length === 0 && !loading && (
+              {links.length === 0 && !loadingLinks && (
                 <p className="text-sm text-default-400 italic text-center py-4">
                   Nenhum servidor disponível.
                 </p>
               )}
             </CardBody>
           </Card>
-
-          {nextEpisode && (
-            <Button
-              color="secondary"
-              variant="flat"
-              fullWidth
-              className="mt-6 py-6 flex flex-col items-center justify-center gap-1 h-auto border border-secondary/20 hover:bg-secondary/10"
-              onPress={() => handlePlayEpisode(nextEpisode!)}
-            >
-              <span className="text-[10px] uppercase font-bold tracking-widest opacity-70">Avançar para</span>
-              <span className="font-bold text-sm">Próximo Episódio ({nextEpisode.episode})</span>
-            </Button>
+          
+          {mediaDetails?.type === 'TvSeries' && mediaDetails.episodes && seasonParam && episodeParam && (
+             (() => {
+                const currentSeason = parseInt(seasonParam);
+                const currentEpisode = parseInt(episodeParam);
+                const nextEp = mediaDetails.episodes.find(ep => ep.season === currentSeason && ep.episode === currentEpisode + 1);
+                return nextEp ? (
+                    <Button
+                      color="secondary"
+                      variant="flat"
+                      fullWidth
+                      className="mt-6 py-6 flex flex-col items-center justify-center gap-1 h-auto border border-secondary/20 hover:bg-secondary/10"
+                      onPress={() => handlePlayEpisode(nextEp)}
+                    >
+                      <span className="text-[10px] uppercase font-bold tracking-widest opacity-70">Avançar para</span>
+                      <span className="font-bold text-sm">Próximo Episódio ({nextEp.episode})</span>
+                    </Button>
+                ) : null;
+             })()
           )}
 
           <div className="mt-6 p-4 rounded-xl bg-primary/5 border border-primary/10">
@@ -269,7 +381,6 @@ export default function Watch() {
         </div>
       </div>
 
-      {/* Lista de Episódios da Temporada (se for Série) */}
       {mediaDetails?.type === 'TvSeries' && mediaDetails.episodes && mediaDetails.episodes.length > 0 && (
         <div className="mt-12 mb-20">
           <h3 className="text-xl font-bold mb-6 flex items-center gap-2">

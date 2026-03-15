@@ -123,6 +123,8 @@ export default function VideoPlayer({ url, title, poster, onEnded }: VideoPlayer
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [isPlaying, isFullscreen, isMuted, volume]); // Dependências necessárias para que os estados reflitam corretamente nas funções chamadas
 
+  const [loadedProgress, setLoadedProgress] = useState(0);
+
   const togglePlay = () => {
     if (videoRef.current) {
       if (isPlaying) videoRef.current.pause();
@@ -134,6 +136,20 @@ export default function VideoPlayer({ url, title, poster, onEnded }: VideoPlayer
   const handleTimeUpdate = () => {
     if (videoRef.current) {
       setCurrentTime(videoRef.current.currentTime);
+      updateBuffered();
+    }
+  };
+
+  const handleProgress = () => {
+    updateBuffered();
+  };
+
+  const updateBuffered = () => {
+    if (videoRef.current && videoRef.current.buffered.length > 0) {
+      try {
+        const bufferedEnd = videoRef.current.buffered.end(videoRef.current.buffered.length - 1);
+        setLoadedProgress(bufferedEnd);
+      } catch (e) {}
     }
   };
 
@@ -220,6 +236,7 @@ export default function VideoPlayer({ url, title, poster, onEnded }: VideoPlayer
         ref={videoRef}
         className="w-full h-full"
         onTimeUpdate={handleTimeUpdate}
+        onProgress={handleProgress}
         onLoadedMetadata={handleLoadedMetadata}
         onPlay={() => setIsPlaying(true)}
         onPause={() => setIsPlaying(false)}
@@ -282,7 +299,15 @@ export default function VideoPlayer({ url, title, poster, onEnded }: VideoPlayer
         {/* Bottom bar */}
         <div className="p-4 space-y-4">
           {/* Progress Bar */}
-          <div className="px-2">
+          <div className="px-2 relative w-full flex items-center h-4">
+            {/* Custom Track and Buffer Bar */}
+            <div className="absolute left-2 right-2 h-1 bg-white/20 rounded-full overflow-hidden pointer-events-none">
+              <div 
+                className="h-full bg-white/50 transition-all duration-300 ease-linear"
+                style={{ width: `${duration > 0 ? (loadedProgress / duration) * 100 : 0}%` }}
+              />
+            </div>
+
             <Slider
               aria-label="Seeker"
               size="sm"
@@ -291,7 +316,10 @@ export default function VideoPlayer({ url, title, poster, onEnded }: VideoPlayer
               minValue={0}
               value={currentTime}
               onChange={handleSeek}
-              className="max-w-full"
+              className="absolute left-2 right-2 w-auto"
+              classNames={{
+                track: "bg-transparent border-transparent",
+              }}
             />
           </div>
 

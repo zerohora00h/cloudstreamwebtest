@@ -4,18 +4,48 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import MediaCarousel from '../components/media/MediaCarousel';
 import { usePlugins } from '../hooks/usePlugins';
 import { useSettings } from '../contexts/SettingsContext';
-import { useSyncStatus } from '../contexts/SyncContext';
+import { useSync } from '../contexts/SyncContext';
 import { api, type HomeSection } from '../services/api';
+
+async function runWithConcurrency<T>(
+  items: T[],
+  concurrency: number,
+  signal: AbortSignal,
+  onProgress: (done: number, total: number) => void,
+  fn: (item: T) => Promise<void>,
+) {
+  let done = 0;
+  const total = items.length;
+  const queue = [...items];
+
+  const worker = async () => {
+    while (queue.length > 0) {
+      if (signal.aborted) return;
+      const item = queue.shift()!;
+      try {
+        await fn(item);
+      } catch {
+        // Skip failed items
+      }
+      done++;
+      onProgress(done, total);
+    }
+  };
+
+  const workers = Array.from({ length: Math.min(concurrency, items.length) }, () => worker());
+  await Promise.all(workers);
+}
 
 export default function Home() {
   const { activePlugin } = usePlugins();
   const { settings } = useSettings();
-  const { startSync, endSync, failSync } = useSyncStatus();
+  const { startSync, updateProgress, endSync, failSync, cancelSync } = useSync();
   const [sections, setSections] = useState<HomeSection[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const activePluginRef = useRef(activePlugin);
   const hasSyncedRef = useRef(false);
+  const hasRecursiveSyncedRef = useRef(false);
 
   activePluginRef.current = activePlugin;
 
@@ -47,13 +77,53 @@ export default function Home() {
     }
   }, [startSync, endSync, failSync]);
 
-  // Initial load when plugin changes
+  // Recursive prefetch: load details for every item on the home page
+  const recursivePrefetch = useCallback(async (pluginId: string, homeSections: HomeSection[]) => {
+    if (hasRecursiveSyncedRef.current) return;
+    hasRecursiveSyncedRef.current = true;
+
+    const allItems = homeSections.flatMap(s => s.list);
+    if (allItems.length === 0) return;
+
+    // Deduplicate by URL
+    const seen = new Set<string>();
+    const uniqueItems = allItems.filter(item => {
+      if (seen.has(item.url)) return false;
+      seen.add(item.url);
+      return true;
+    });
+
+    const concurrency = settings?.recursiveConcurrency ?? 2;
+    const signal = startSync('Pré-carregando... ');
+
+    await runWithConcurrency(
+      uniqueItems,
+      concurrency,
+      signal,
+      (done, total) => {
+        if (!signal.aborted) updateProgress(done, total);
+      },
+      async (item) => {
+        if (signal.aborted) return;
+        if (activePluginRef.current?.id !== pluginId) return;
+        await api.load(pluginId, item.url);
+      },
+    );
+
+    if (!signal.aborted && activePluginRef.current?.id === pluginId) {
+      endSync();
+    }
+  }, [settings?.recursiveConcurrency, startSync, updateProgress, endSync]);
+
+  // Cancel sync when plugin changes
   useEffect(() => {
     if (!activePlugin) return;
     setSections([]);
     hasSyncedRef.current = false;
+    hasRecursiveSyncedRef.current = false;
+    cancelSync();
     fetchHome(activePlugin.id, true);
-  }, [activePlugin, fetchHome]);
+  }, [activePlugin, fetchHome, cancelSync]);
 
   // Background sync after initial load (once per plugin)
   useEffect(() => {
@@ -67,6 +137,18 @@ export default function Home() {
 
     return () => clearTimeout(timer);
   }, [activePlugin, loading, sections.length, settings?.syncEnabled]);
+
+  // Recursive prefetch after sections are loaded and sync is done
+  useEffect(() => {
+    if (!activePlugin || loading || sections.length === 0) return;
+    if (!settings?.recursiveHomeSync || hasRecursiveSyncedRef.current) return;
+
+    const timer = setTimeout(() => {
+      recursivePrefetch(activePlugin.id, sections);
+    }, 2000);
+
+    return () => clearTimeout(timer);
+  }, [activePlugin, loading, sections, settings?.recursiveHomeSync, recursivePrefetch]);
 
   if (loading) {
     return (
