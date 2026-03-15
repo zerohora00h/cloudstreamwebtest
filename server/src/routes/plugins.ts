@@ -16,44 +16,76 @@ pluginRoutes.get('/plugins/:id/home', async (req: Request, res: Response) => {
     if (!plugin) return res.status(404).json({ error: 'Plugin not found' });
 
     const isCacheEnabled = getSetting('cacheData') !== 'false';
-    const forceFresh = req.query.fresh === 'true';
 
-    let cached = null;
-    if (isCacheEnabled && !forceFresh) {
-      cached = getHomeCache(pluginId);
-      if (cached) {
-        // Return quickly
-        res.json(cached.data);
-      }
+    if (isCacheEnabled) {
+      const cached = getHomeCache(pluginId);
+      if (cached) return res.json(cached.data);
     }
 
-    // Trigger async background refresh (or block if no cache)
-    const fetchFreshContent = async () => {
-      try {
-        const freshData = await plugin.getHome();
-        
-        // Se conseguimos dados válidos e cache está ativado, vamos atualizar
-        if (isCacheEnabled && freshData && freshData.length > 0) {
-          saveHomeCache(pluginId, freshData);
-        }
+    const freshData = await plugin.getHome();
 
-        return freshData;
-      } catch (err) {
-        console.error('[Sync] Background home fetch error:', err);
-        throw err;
-      }
-    };
-
-    if (cached) {
-      // Async refresh since we already answered the user
-      fetchFreshContent().catch(() => {});
-    } else {
-      // Wait to respond because we have no cache
-      const freshData = await fetchFreshContent();
-      res.json(freshData);
+    if (isCacheEnabled && freshData && freshData.length > 0) {
+      saveHomeCache(pluginId, freshData);
     }
+
+    res.json(freshData);
   } catch (error: any) {
     console.error(error);
+    if (!res.headersSent) {
+      res.status(500).json({ error: error.message });
+    }
+  }
+});
+
+pluginRoutes.post('/plugins/:id/home/check', async (req: Request, res: Response) => {
+  try {
+    const pluginId = req.params.id as string;
+    const plugin = PluginRegistry.getById(pluginId);
+    if (!plugin) return res.status(404).json({ error: 'Plugin not found' });
+
+    const isCacheEnabled = getSetting('cacheData') !== 'false';
+    const cached = isCacheEnabled ? getHomeCache(pluginId) : null;
+
+    const freshData = await plugin.getHome();
+
+    if (!freshData || freshData.length === 0) {
+      return res.json({ changed: false });
+    }
+
+    if (!cached || !cached.data || cached.data.length === 0) {
+      if (isCacheEnabled) saveHomeCache(pluginId, freshData);
+      return res.json({ changed: true, sections: freshData, updatedSections: freshData.map((s: any) => s.name) });
+    }
+
+    const cachedSections: any[] = cached.data;
+    const updatedSections: string[] = [];
+
+    for (const freshSection of freshData) {
+      const cachedSection = cachedSections.find((cs: any) => cs.name === freshSection.name);
+
+      if (!cachedSection || cachedSection.list.length === 0) {
+        updatedSections.push(freshSection.name);
+        continue;
+      }
+
+      const freshFirst = freshSection.list[0];
+      const cachedFirst = cachedSection.list[0];
+
+      if (freshFirst.url !== cachedFirst.url) {
+        updatedSections.push(freshSection.name);
+      }
+    }
+
+    if (updatedSections.length === 0) {
+      return res.json({ changed: false });
+    }
+
+    if (isCacheEnabled) saveHomeCache(pluginId, freshData);
+
+    console.log(`[SmartSync] ${updatedSections.length} section(s) changed for ${pluginId}: ${updatedSections.join(', ')}`);
+    return res.json({ changed: true, sections: freshData, updatedSections });
+  } catch (error: any) {
+    console.error('[SmartSync] Error:', error);
     if (!res.headersSent) {
       res.status(500).json({ error: error.message });
     }

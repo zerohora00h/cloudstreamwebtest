@@ -13,7 +13,7 @@ interface SyncContextType {
   progress: SyncProgress | null;
   startSync: (message?: string) => AbortSignal;
   updateProgress: (current: number, total: number) => void;
-  endSync: () => void;
+  endSync: (message?: string) => void;
   failSync: () => void;
   cancelSync: () => void;
 }
@@ -24,6 +24,7 @@ const SyncContext = createContext<SyncContextType>({
   startSync: () => new AbortController().signal,
   updateProgress: () => {},
   endSync: () => {},
+
   failSync: () => {},
   cancelSync: () => {},
 });
@@ -35,22 +36,31 @@ export function useSync() {
 export function SyncProvider({ children }: { children: ReactNode }) {
   const [syncStatus, setSyncStatus] = useState<SyncStatus>('idle');
   const [message, setMessage] = useState('Verificando novidades...');
+  const [endMessage, setEndMessage] = useState('Tudo atualizado!');
   const [progress, setProgress] = useState<SyncProgress | null>(null);
   const abortRef = useRef<AbortController | null>(null);
+  const endTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const cancelSync = useCallback(() => {
     if (abortRef.current) {
       abortRef.current.abort();
       abortRef.current = null;
     }
+    if (endTimerRef.current) {
+      clearTimeout(endTimerRef.current);
+      endTimerRef.current = null;
+    }
     setProgress(null);
     setSyncStatus('idle');
   }, []);
 
   const startSync = useCallback((msg?: string) => {
-    // Abort any previous sync
     if (abortRef.current) {
       abortRef.current.abort();
+    }
+    if (endTimerRef.current) {
+      clearTimeout(endTimerRef.current);
+      endTimerRef.current = null;
     }
 
     const controller = new AbortController();
@@ -66,11 +76,15 @@ export function SyncProvider({ children }: { children: ReactNode }) {
     setProgress({ current, total });
   }, []);
 
-  const endSync = useCallback(() => {
+  const endSync = useCallback((msg?: string) => {
     abortRef.current = null;
     setProgress(null);
+    if (msg) setEndMessage(msg);
     setSyncStatus('done');
-    setTimeout(() => setSyncStatus('idle'), 2500);
+    endTimerRef.current = setTimeout(() => {
+      endTimerRef.current = null;
+      setSyncStatus('idle');
+    }, 2500);
   }, []);
 
   const failSync = useCallback(() => {
@@ -115,7 +129,7 @@ export function SyncProvider({ children }: { children: ReactNode }) {
           ) : (
             <>
               <CheckCircle2 className="w-4 h-4 text-success" />
-              <span className="text-sm text-success">Tudo atualizado!</span>
+              <span className="text-sm text-success">{endMessage}</span>
             </>
           )}
         </div>

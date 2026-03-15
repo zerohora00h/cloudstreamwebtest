@@ -7,6 +7,7 @@ const USER_AGENT = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36
 export default createPlugin((api) => ({
   async getHome(): Promise<HomeSection[]> {
     const categories = [
+      { name: "Recém Adicionados", url: "/" },
       { name: "Ação", url: "/genero/acao" },
       { name: "Animação", url: "/genero/animacao" },
       { name: "Comédia", url: "/genero/comedia" },

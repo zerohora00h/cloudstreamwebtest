@@ -47,46 +47,63 @@ export default function Home() {
   const activePluginRef = useRef(activePlugin);
   const hasSyncedRef = useRef(false);
   const hasRecursiveSyncedRef = useRef(false);
+  const updatedSectionsRef = useRef<string[]>([]);
 
   activePluginRef.current = activePlugin;
 
-  const fetchHome = useCallback(async (pluginId: string, isInitialLoad: boolean) => {
+  const fetchHome = useCallback(async (pluginId: string) => {
     setError(null);
-
-    if (isInitialLoad) {
-      setLoading(true);
-    } else {
-      startSync('Verificando novidades...');
-    }
+    setLoading(true);
 
     try {
-      const data = await api.getHome(pluginId, !isInitialLoad);
+      const data = await api.getHome(pluginId);
       
       if (activePluginRef.current?.id !== pluginId) return;
 
       setSections(data);
-
-      if (!isInitialLoad) {
-        endSync();
-      }
     } catch (err) {
       if (activePluginRef.current?.id !== pluginId) return;
-      if (isInitialLoad) setError('Falha ao carregar conteúdo da Home.');
-      failSync();
+      setError('Falha ao carregar conteúdo da Home.');
     } finally {
       setLoading(false);
     }
+  }, []);
+
+  const smartSync = useCallback(async (pluginId: string) => {
+    startSync('Procurando novidades...');
+
+    try {
+      const result = await api.checkHome(pluginId);
+
+      if (activePluginRef.current?.id !== pluginId) return;
+
+      if (!result.changed) {
+        endSync('Nenhuma novidade encontrada.');
+        return;
+      }
+
+      if (result.sections) {
+        setSections(result.sections);
+        updatedSectionsRef.current = result.updatedSections ?? [];
+      }
+
+      const count = result.updatedSections?.length ?? 0;
+      endSync(`${count} seção(ões) atualizada(s)!`);
+    } catch {
+      if (activePluginRef.current?.id !== pluginId) return;
+      failSync();
+    }
   }, [startSync, endSync, failSync]);
 
-  // Recursive prefetch: load details for every item on the home page
   const recursivePrefetch = useCallback(async (pluginId: string, homeSections: HomeSection[]) => {
     if (hasRecursiveSyncedRef.current) return;
     hasRecursiveSyncedRef.current = true;
 
-    const allItems = homeSections.flatMap(s => s.list);
+    const changedNames = new Set(updatedSectionsRef.current);
+    const targetSections = homeSections.filter(s => changedNames.has(s.name));
+    const allItems = targetSections.flatMap(s => s.list);
     if (allItems.length === 0) return;
 
-    // Deduplicate by URL
     const seen = new Set<string>();
     const uniqueItems = allItems.filter(item => {
       if (seen.has(item.url)) return false;
@@ -122,27 +139,29 @@ export default function Home() {
     setSections([]);
     hasSyncedRef.current = false;
     hasRecursiveSyncedRef.current = false;
+    updatedSectionsRef.current = [];
     cancelSync();
-    fetchHome(activePlugin.id, true);
+    fetchHome(activePlugin.id);
   }, [activePlugin, fetchHome, cancelSync]);
 
-  // Background sync after initial load (once per plugin)
+  // Smart background sync after initial load (once per plugin)
   useEffect(() => {
     if (!activePlugin || loading || sections.length === 0) return;
     if (!settings?.syncEnabled || hasSyncedRef.current) return;
 
-    hasSyncedRef.current = true;
     const timer = setTimeout(() => {
-      fetchHome(activePlugin.id, false);
+      hasSyncedRef.current = true;
+      smartSync(activePlugin.id);
     }, 1000);
 
     return () => clearTimeout(timer);
-  }, [activePlugin, loading, sections.length, settings?.syncEnabled]);
+  }, [activePlugin, loading, sections.length, settings?.syncEnabled, smartSync]);
 
-  // Recursive prefetch after sections are loaded and sync is done
+  // Recursive prefetch: only after smart sync detects changes
   useEffect(() => {
     if (!activePlugin || loading || sections.length === 0) return;
     if (!settings?.recursiveHomeSync || hasRecursiveSyncedRef.current) return;
+    if (updatedSectionsRef.current.length === 0) return;
 
     const timer = setTimeout(() => {
       recursivePrefetch(activePlugin.id, sections);
@@ -167,7 +186,7 @@ export default function Home() {
           variant="flat"
           size="sm"
           startContent={<RefreshCcw className="w-4 h-4" />}
-          onPress={() => activePlugin && fetchHome(activePlugin.id, false)}
+          onPress={() => activePlugin && smartSync(activePlugin.id)}
           isDisabled={loading}
         >
           Atualizar
@@ -187,7 +206,7 @@ export default function Home() {
             variant="flat"
             color="primary"
             startContent={<RefreshCcw className="w-4 h-4" />}
-            onPress={() => activePlugin && fetchHome(activePlugin.id, true)}
+            onPress={() => activePlugin && fetchHome(activePlugin.id)}
           >
             Recarregar
           </Button>

@@ -102,6 +102,11 @@ export const api = {
     return res.json();
   },
 
+  async checkHome(pluginId: string): Promise<{ changed: boolean; sections?: HomeSection[]; updatedSections?: string[] }> {
+    const res = await fetch(`${API_BASE}/plugins/${pluginId}/home/check`, { method: 'POST' });
+    return res.json();
+  },
+
   async search(pluginId: string, query: string): Promise<MediaItem[]> {
     const res = await fetch(`${API_BASE}/plugins/${pluginId}/search?q=${encodeURIComponent(query)}`);
     return res.json();
