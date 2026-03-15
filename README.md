@@ -2,7 +2,25 @@
 
 Versão web do CloudStream — plataforma de streaming baseada em plugins.
 
-## Requisitos
+## ✨ Principais Funcionalidades
+
+- **Smart Sync**: Sincronização inteligente da home que detecta mudanças e evita requisições desnecessárias.
+- **Recursive Prefetch**: Pré-carregamento inteligente de detalhes e links em segundo plano para navegação instantânea.
+- **Sistema de Cache**: Cache local via SQLite para carregamento imediato de conteúdos já visitados.
+- **Streaming Proxy**: Proxy integrado que gerencia headers e referers para garantir que o vídeo rode em qualquer player e inclusive externos como VLC.
+- **Multi-Plugin**: Arquitetura extensível que permite adicionar novos extratores e provedores facilmente.
+- **Busca Unificada**: Pesquise em todos os plugins instalados simultaneamente.
+
+## ⚙️ Configurações Disponíveis
+
+No menu de configurações, você pode ajustar:
+
+- **Cache de Dados**: Ativa/Desativa o armazenamento persistente.
+- **Sync em Segundo Plano**: Verifica se há novidades na home enquanto você navega.
+- **Sync Recursivo (Home/Séries)**: Escolha se o app deve pré-carregar os detalhes de tudo o que aparece na tela.
+- **Concorrência Recursiva**: Controle quantos processos simultâneos o prefetch pode usar (recomendado: 2-4).
+
+## 🛠️ Requisitos
 
 - [Node.js](https://nodejs.org/) (v18 ou superior)
 
