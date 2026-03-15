@@ -53,6 +53,11 @@ app.use((req, res, next) => {
   const route = req.url.split('?')[0];
   const key = `${req.method} ${route}`;
 
+  // Ignore noisy stream logs
+  if (route === '/api/stream') {
+    return next();
+  }
+
   if (key === logState.lastKey) {
     logState.count++;
     // Reset the flush timer — keep buffering while burst continues

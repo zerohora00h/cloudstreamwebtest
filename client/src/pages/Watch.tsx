@@ -223,6 +223,7 @@ export default function Watch() {
             {activeLink && activeLink.status === 'extracted' ? (
               <VideoPlayer
                 url={activeLink.url}
+                type={activeLink.type}
                 title={title}
               />
             ) : (
@@ -388,7 +389,9 @@ export default function Watch() {
             {loadingDetails && <Spinner size="sm" className="ml-2" />}
           </h3>
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3">
-            {mediaDetails.episodes.map((ep, idx) => {
+            {mediaDetails.episodes
+              .filter(ep => ep.season === parseInt(seasonParam || '1'))
+              .map((ep, idx) => {
               const isCurrent = data === ep.data;
               return (
                 <Card

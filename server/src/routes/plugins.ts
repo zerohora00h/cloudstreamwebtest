@@ -239,15 +239,18 @@ async function performExtraction(plugin: any, link: any) {
   }
 
   if (extracted && extracted.length > 0) {
-    return extracted.map((e: any) => ({
-      ...e,
-      url: `/api/stream?url=${encodeURIComponent(e.url)}&referer=${encodeURIComponent(e.referer || link.url)}`
-    }));
+    return extracted.map((e: any) => {
+      const finalType = e.type || link.type || (e.url.includes('.m3u8') ? 'hls' : e.url.includes('.mp4') ? 'mp4' : '');
+      return {
+        ...e,
+        url: `/api/stream?url=${encodeURIComponent(e.url)}&referer=${encodeURIComponent(e.referer || link.url)}&type=${finalType}`
+      };
+    });
   } else {
-    // Even if not extracted by a separate extractor, proxy the direct link
+    const finalType = link.type || (link.url.includes('.m3u8') ? 'hls' : link.url.includes('.mp4') ? 'mp4' : '');
     return [{
       ...link,
-      url: `/api/stream?url=${encodeURIComponent(link.url)}&referer=${encodeURIComponent(link.referer || link.url)}`
+      url: `/api/stream?url=${encodeURIComponent(link.url)}&referer=${encodeURIComponent(link.referer || link.url)}&type=${finalType}`
     }];
   }
 }

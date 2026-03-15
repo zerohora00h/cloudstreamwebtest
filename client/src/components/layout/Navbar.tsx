@@ -108,7 +108,10 @@ export default function Navbar() {
                 onSelectionChange={(keys) => {
                   const id = Array.from(keys)[0] as string;
                   const plugin = plugins.find(p => p.id === id);
-                  if (plugin) setActivePlugin(plugin);
+                  if (plugin) {
+                    setActivePlugin(plugin);
+                    navigate('/');
+                  }
                 }}
               >
                 {plugins.map((p) => (

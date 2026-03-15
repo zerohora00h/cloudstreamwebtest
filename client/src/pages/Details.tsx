@@ -454,7 +454,9 @@ export default function Details() {
                       <ScrollShadow className="max-h-[500px] pr-2">
                         {currentEpisodes.length > 0 ? (
                           <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                            {currentEpisodes.map((ep, idx) => (
+                            {currentEpisodes
+                              .filter(ep => ep.season === season)
+                              .map((ep, idx) => (
                               <Card
                                 key={idx}
                                 isPressable

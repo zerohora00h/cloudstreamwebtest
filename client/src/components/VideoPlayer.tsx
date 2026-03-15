@@ -2,6 +2,8 @@ import { Button, Slider, Spinner, Tooltip } from '@heroui/react';
 import Hls from 'hls.js';
 import {
   AlertCircle,
+  Check,
+  Copy,
   Maximize,
   Minimize,
   Pause,
@@ -16,12 +18,13 @@ import { useEffect, useRef, useState } from 'react';
 
 interface VideoPlayerProps {
   url: string;
+  type?: string;
   title?: string;
   poster?: string;
   onEnded?: () => void;
 }
 
-export default function VideoPlayer({ url, title, poster, onEnded }: VideoPlayerProps) {
+export default function VideoPlayer({ url, type, title, poster, onEnded }: VideoPlayerProps) {
   const videoRef = useRef<HTMLVideoElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const [isPlaying, setIsPlaying] = useState(false);
@@ -33,6 +36,7 @@ export default function VideoPlayer({ url, title, poster, onEnded }: VideoPlayer
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [showControls, setShowControls] = useState(true);
+  const [copied, setCopied] = useState(false);
   const controlsTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
@@ -45,13 +49,15 @@ export default function VideoPlayer({ url, title, poster, onEnded }: VideoPlayer
     setError(null);
     let hls: Hls | null = null;
 
-    // Detecção aprimorada: se contém 'get_video', '.mp4' ou não parece HLS, tratamos como MP4
+    // Detecção baseada no metadado 'type' ou na URL se não disponível
     const urlLower = url.toLowerCase();
-    const isExplicitHls = urlLower.includes('.m3u8') || urlLower.includes('type=hls') || urlLower.includes('m3u8');
-    const isExplicitMp4 = urlLower.includes('.mp4') || urlLower.includes('get_video') || urlLower.includes('streamtape.com');
     
-    // Tentamos HLS apenas se for explicitamente HLS ou não for explicitamente MP4
-    const shouldTryHls = isExplicitHls || (!isExplicitMp4 && Hls.isSupported());
+    // Prioridade para o 'type' explícito vindo do extrator/proxy
+    const isMp4 = type === 'mp4' || (!type && (urlLower.includes('.mp4') || urlLower.includes('get_video')));
+    const isHls = type === 'hls' || (!type && (urlLower.includes('.m3u8') || urlLower.includes('m3u8')));
+    
+    // Tentamos HLS se for explicitamente HLS ou se não for explicitamente MP4 e HLS for suportado
+    const shouldTryHls = isHls || (!isMp4 && Hls.isSupported());
 
     const startNativePlayback = () => {
       if (!isMounted) return;
@@ -263,6 +269,25 @@ export default function VideoPlayer({ url, title, poster, onEnded }: VideoPlayer
     setIsLoading(false);
   };
 
+  const handleCopyLink = () => {
+    let finalUrl = url;
+    
+    // Se a URL não começar com http (é relativa) ou não for do nosso proxy,
+    // vamos garantir que ela seja o link do nosso proxy para funcionar externamente (CORS/Referer)
+    if (!url.includes('/api/stream')) {
+        const proxyUrl = `/api/stream?url=${encodeURIComponent(url)}`;
+        finalUrl = window.location.origin + proxyUrl;
+    } else if (url.startsWith('/')) {
+        finalUrl = window.location.origin + url;
+    }
+
+    navigator.clipboard.writeText(finalUrl).then(() => {
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+      console.log('Link copiado (Proxy):', finalUrl);
+    });
+  };
+
   return (
     <div
       ref={containerRef}
@@ -318,6 +343,11 @@ export default function VideoPlayer({ url, title, poster, onEnded }: VideoPlayer
         <div className="p-4 flex items-center justify-between">
           <h3 className="text-white font-medium truncate">{title}</h3>
           <div className="flex items-center gap-2">
+            <Tooltip content={copied ? "Copiado!" : "Copiar Link da Stream"}>
+              <Button isIconOnly variant="light" size="sm" className={copied ? "text-success" : "text-white"} onPress={handleCopyLink}>
+                {copied ? <Check className="w-5 h-5" /> : <Copy className="w-5 h-5" />}
+              </Button>
+            </Tooltip>
             <Tooltip content="Configurações">
               <Button isIconOnly variant="light" size="sm" className="text-white">
                 <Settings className="w-5 h-5" />
@@ -337,10 +367,10 @@ export default function VideoPlayer({ url, title, poster, onEnded }: VideoPlayer
 
         {/* Bottom bar */}
         <div className="p-4 space-y-4">
-          {/* Progress Bar */}
-          <div className="px-2 relative w-full flex items-center h-4">
+          {/* Progress Bar Container */}
+          <div className="px-2 relative w-full flex items-center h-6 group/timeline cursor-pointer">
             {/* Custom Track and Buffer Bar */}
-            <div className="absolute left-2 right-2 h-1 bg-white/20 rounded-full overflow-hidden pointer-events-none">
+            <div className="absolute left-2 right-2 h-1 group-hover/timeline:h-2 bg-white/20 rounded-full overflow-hidden pointer-events-none transition-all duration-200">
               <div 
                 className="h-full bg-white/50 transition-all duration-300 ease-linear"
                 style={{ width: `${duration > 0 ? (loadedProgress / duration) * 100 : 0}%` }}
@@ -357,7 +387,10 @@ export default function VideoPlayer({ url, title, poster, onEnded }: VideoPlayer
               onChange={handleSeek}
               className="absolute left-2 right-2 w-auto"
               classNames={{
-                track: "bg-transparent border-transparent",
+                base: "cursor-pointer",
+                track: "bg-transparent border-transparent h-1 group-hover/timeline:h-2 transition-all duration-200",
+                filler: "cursor-pointer h-1 group-hover/timeline:h-2 transition-all duration-200",
+                thumb: "opacity-100 transition-all duration-200 cursor-pointer w-4 h-4 bg-white border-2 border-primary shadow-sm after:hidden group-hover/timeline:scale-125",
               }}
             />
           </div>

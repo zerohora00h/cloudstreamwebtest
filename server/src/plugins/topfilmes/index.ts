@@ -27,17 +27,19 @@ export default createPlugin((api) => ({
           const $el = $(el);
           let link = $el.prop('tagName') === 'A' ? $el.attr('href') : $el.find('a').attr('href');
           let title = $el.find('div.title').text().trim() || $el.find('h2').text().trim() || $el.find('a').attr('title')?.trim() || $el.find('img').attr('alt')?.trim();
-          
+
           let $img = $el.find('img');
           let posterUrl = $img.attr('data-src') || $img.attr('src') || $img.attr('data-original') || $img.attr('data-ll-src') || "";
-          
+
           let yearText = $el.find('div.year').text() || $el.find('span.year').text() || $el.find('.year').text();
           let year = yearText ? parseInt(yearText) : undefined;
-          
+
           if (link && title) {
             posterUrl = posterUrl.replace("_filter(blur)", "");
-            if (posterUrl.startsWith('/')) posterUrl = `${MAIN_URL}${posterUrl}`;
-            
+            if (posterUrl.startsWith('//')) posterUrl = `https:${posterUrl}`;
+            else if (posterUrl.startsWith('/') && !posterUrl.startsWith('/i.assistir.app')) posterUrl = `${MAIN_URL}${posterUrl}`;
+            else if (posterUrl.startsWith('/i.assistir.app')) posterUrl = `https:${posterUrl}`;
+
             list.push({
               name: title,
               url: link.startsWith('http') ? link : `${MAIN_URL}${link}`,
@@ -77,17 +79,19 @@ export default createPlugin((api) => ({
       const $el = $(el);
       let link = $el.prop('tagName') === 'A' ? $el.attr('href') : $el.find('a').attr('href');
       let title = $el.find('div.title').text().trim() || $el.find('h2').text().trim() || $el.find('a').attr('title')?.trim() || $el.find('img').attr('alt')?.trim();
-      
+
       let $img = $el.find('img');
       let posterUrl = $img.attr('data-src') || $img.attr('src') || $img.attr('data-original') || $img.attr('data-ll-src') || "";
-      
+
       let yearText = $el.find('div.year').text() || $el.find('span.year').text() || $el.find('.year').text();
       let year = yearText ? parseInt(yearText) : undefined;
-      
+
       if (link && title) {
         posterUrl = posterUrl.replace("_filter(blur)", "");
-        if (posterUrl.startsWith('/')) posterUrl = `${MAIN_URL}${posterUrl}`;
-        
+        if (posterUrl.startsWith('//')) posterUrl = `https:${posterUrl}`;
+        else if (posterUrl.startsWith('/') && !posterUrl.startsWith('/i.assistir.app')) posterUrl = `${MAIN_URL}${posterUrl}`;
+        else if (posterUrl.startsWith('/i.assistir.app')) posterUrl = `https:${posterUrl}`;
+
         list.push({
           name: title,
           url: link.startsWith('http') ? link : `${MAIN_URL}${link}`,
@@ -107,14 +111,16 @@ export default createPlugin((api) => ({
 
     const title = $('div.infos h2').text().trim() || "Sem título";
     let posterUrl = $('div.player img').attr('src') || "";
-    if (posterUrl.startsWith('/')) posterUrl = `${MAIN_URL}${posterUrl}`;
+    if (posterUrl.startsWith('//')) posterUrl = `https:${posterUrl}`;
+    else if (posterUrl.startsWith('/') && !posterUrl.startsWith('/i.assistir.app')) posterUrl = `${MAIN_URL}${posterUrl}`;
+    else if (posterUrl.startsWith('/i.assistir.app')) posterUrl = `https:${posterUrl}`;
 
     let yearText = $('div.infos div.info').eq(0).text().trim();
     let durationText = $('div.infos div.info').eq(1).text().trim();
     let genre = $('div.infos div.info').eq(2).text().trim();
-    
+
     let year = yearText ? parseInt(yearText) : undefined;
-    
+
     // Parse duration: "90 Minutos" -> 90
     let duration = durationText ? parseInt(durationText.replace(/\D/g, '')) : undefined;
     if (isNaN(duration as number)) duration = undefined;
@@ -122,7 +128,7 @@ export default createPlugin((api) => ({
     const plot = $('div.infos div.sinopse').text().trim();
     const scoreText = $('div.infos div.imdb span').text().trim();
     let score = scoreText ? parseFloat(scoreText) : undefined;
-    
+
     const tags: string[] = [];
     if (genre) tags.push(genre);
 
@@ -155,7 +161,7 @@ export default createPlugin((api) => ({
 
   async loadLinks(data: string): Promise<StreamLink[]> {
     if (!data) return [];
-    
+
     let playerUrl = data;
     // Data might be from Kotlin "[url]" format
     if (data.startsWith('[') && data.endsWith(']')) {
@@ -167,8 +173,8 @@ export default createPlugin((api) => ({
     }
 
     if (!playerUrl.startsWith('http')) {
-       // if it's a relative path, assume mainUrl
-       playerUrl = playerUrl.startsWith('//') ? `https:${playerUrl}` : `${MAIN_URL}${playerUrl.startsWith('/') ? '' : '/'}${playerUrl}`;
+      // if it's a relative path, assume mainUrl
+      playerUrl = playerUrl.startsWith('//') ? `https:${playerUrl}` : `${MAIN_URL}${playerUrl.startsWith('/') ? '' : '/'}${playerUrl}`;
     }
 
     const res = await api.request.get(playerUrl, { headers: { 'User-Agent': USER_AGENT } });
@@ -196,29 +202,30 @@ export default createPlugin((api) => ({
     // Checking any video
     let anyVideoSrc = $('video').attr('src');
     if (anyVideoSrc) {
-       if (anyVideoSrc.startsWith('//')) anyVideoSrc = `https:${anyVideoSrc}`;
-        links.push({
-          name: "TopFilmes Direct",
-          url: anyVideoSrc,
-          quality: "Auto",
-          type: anyVideoSrc.includes('.m3u8') ? 'hls' : 'mp4',
-          referer: MAIN_URL
-        });
-        return links;
+      if (anyVideoSrc.startsWith('//')) anyVideoSrc = `https:${anyVideoSrc}`;
+      links.push({
+        name: "TopFilmes Direct",
+        url: anyVideoSrc,
+        quality: "Auto",
+        type: anyVideoSrc.includes('.m3u8') ? 'hls' : 'mp4',
+        referer: MAIN_URL
+      });
+      return links;
     }
 
     // Checking source tags
     let sourceSrc = $('source').filter((_, el) => $(el).attr('type') === 'video/mp4' && !!$(el).attr('src')).attr('src');
     if (sourceSrc) {
       if (sourceSrc.startsWith('//')) sourceSrc = `https:${sourceSrc}`;
-        links.push({
-          name: "TopFilmes Direct",
-          url: sourceSrc,
-          quality: "Auto",
-          type: 'mp4',
-          referer: MAIN_URL
-        });
-        return links;
+      const linkObj: StreamLink = {
+        name: "TopFilmes Direct 1",
+        url: sourceSrc,
+        quality: "Auto",
+        type: 'mp4',
+        referer: MAIN_URL
+      };
+      links.push(linkObj);
+      return links;
     }
 
     return links;

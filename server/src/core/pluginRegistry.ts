@@ -52,7 +52,9 @@ function sanitizeStreamLink(raw: any): StreamLink {
     name: String(raw.name || ''),
     url: String(raw.url || ''),
     quality: String(raw.quality || 'Auto'),
+    type: raw.type, // Preserve type if exists ('hls' | 'mp4')
     referer: raw.referer ? String(raw.referer) : undefined,
+    headers: raw.headers, // Also preserve headers
   };
 }
 

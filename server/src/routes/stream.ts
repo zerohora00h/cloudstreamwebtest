@@ -8,8 +8,11 @@ streamRoutes.get('/stream', async (req: Request, res: Response) => {
   const { url: targetUrl, referer } = req.query as { url?: string; referer?: string };
   if (!targetUrl) return res.status(400).send('URL is required');
 
-  console.log(`[Stream Proxy] Requesting: ${targetUrl.substring(0, 100)}...`);
-  console.log(`[Stream Proxy] Client Range: ${req.headers.range || 'None'}`);
+  const isSegment = targetUrl.match(/\.(m4s|ts|m4v|m4a|m4b|m4p)$/) || targetUrl.includes('/seg-') || targetUrl.includes('/fragment-');
+  if (!isSegment) {
+    console.log(`[Stream Proxy] Requesting: ${targetUrl.substring(0, 100)}...`);
+    console.log(`[Stream Proxy] Client Range: ${req.headers.range || 'None'}`);
+  }
 
   const controller = new AbortController();
 
@@ -34,11 +37,19 @@ streamRoutes.get('/stream', async (req: Request, res: Response) => {
       validateStatus: (status) => status >= 200 && status < 400,
     });
 
-    console.log(`[Stream Proxy] Source Status: ${response.status}`);
+    if (!isSegment) {
+      console.log(`[Stream Proxy] Source Status: ${response.status}`);
+    }
 
     // Explicitly select headers to forward
     let contentType = response.headers['content-type']?.toString();
-    const isM3U8 = (targetUrl.split('?')[0].endsWith('.m3u8') || contentType?.includes('mpegurl') || contentType?.includes('application/x-mpegURL')) && response.status === 200;
+    const { type } = req.query as { type?: string };
+
+    const isM3U8 = (
+      (targetUrl.split('?')[0].endsWith('.m3u8') || contentType?.includes('mpegurl') || contentType?.includes('application/x-mpegURL')) && 
+      response.status === 200 &&
+      type !== 'mp4'
+    );
 
     if (!contentType || contentType === 'application/octet-stream') {
       if (isM3U8) contentType = 'application/vnd.apple.mpegurl';
@@ -60,61 +71,102 @@ streamRoutes.get('/stream', async (req: Request, res: Response) => {
 
     // If it's a manifest, we need to rewrite it to handle relative URLs
     if (isM3U8) {
-      console.log(`[Stream Proxy] Rewriting M3U8 manifest: ${targetUrl.substring(0, 100)}`);
+      console.log(`[Stream Proxy] Checking if is real M3U8 manifest: ${targetUrl.substring(0, 100)}`);
       
       const isGzip = response.headers['content-encoding'] === 'gzip';
       let dataStream = response.data;
 
       if (isGzip) {
-        console.log('[Stream Proxy] Decompressing GZIP manifest...');
         dataStream = response.data.pipe(zlib.createGunzip());
       }
 
       let manifestText = '';
-      for await (const chunk of dataStream) {
-        manifestText += chunk.toString();
-      }
+      let isRealM3U8 = false;
+      const chunks: any[] = [];
 
-      const baseUrl = new URL(targetUrl);
-      const host = req.get('host');
-      const protocol = req.protocol;
-      const proxyBaseUrl = `${protocol}://${host}${req.baseUrl}/stream`;
-
-      const lines = manifestText.split('\n');
-      const rewrittenLines = lines.map(line => {
-        const trimmedLine = line.trim();
-        if (trimmedLine === '' || trimmedLine.startsWith('#EXT-X-KEY')) return line; // Skip keys for now or handle them
-
-        // Helper to wrap URL in proxy
-        const proxyWrap = (rawUrl: string) => {
-          try {
-            const resolvedUrl = new URL(rawUrl, baseUrl).href;
-            return `${proxyBaseUrl}?url=${encodeURIComponent(resolvedUrl)}&referer=${encodeURIComponent(referer || targetUrl)}`;
-          } catch (e) {
-            return rawUrl;
+      try {
+        for await (const chunk of dataStream) {
+          chunks.push(chunk);
+          manifestText += chunk.toString();
+          
+          // Check early if it's a real M3U8
+          if (!isRealM3U8 && manifestText.length >= 7) {
+            if (manifestText.trimStart().startsWith('#EXTM3U')) {
+              isRealM3U8 = true;
+            } else {
+              // Not a real M3U8, break and stream directly
+              console.log('[Stream Proxy] Not a real M3U8 manifest, falling back to direct stream.');
+              break;
+            }
           }
-        };
 
-        // If it starts with #, it's a tag. We need to check for URI="..."
-        if (trimmedLine.startsWith('#')) {
-          return line.replace(/URI="(.*?)"/g, (match, p1) => {
-            return `URI="${proxyWrap(p1)}"`;
-          });
+          // Safety limit: Don't buffer more than 2MB for a manifest
+          if (Buffer.concat(chunks).length > 2 * 1024 * 1024) {
+            console.log('[Stream Proxy] Manifest too large (>2MB), falling back to direct stream.');
+            isRealM3U8 = false;
+            break;
+          }
         }
 
-        // Otherwise it's a direct URL line
-        return proxyWrap(trimmedLine);
-      });
+        if (isRealM3U8) {
+          const baseUrl = new URL(targetUrl);
+          const host = req.get('host');
+          const protocol = req.protocol;
+          const proxyBaseUrl = `${protocol}://${host}${req.baseUrl}/stream`;
 
-      const finalManifest = rewrittenLines.join('\n');
-      forwardHeaders['Content-Length'] = Buffer.byteLength(finalManifest).toString();
-      
-      // Remove encoding header since we've decompressed and rewritten to plain text
-      delete forwardHeaders['Content-Encoding'];
+          const lines = manifestText.split('\n');
+          const rewrittenLines = lines.map(line => {
+            const trimmedLine = line.trim();
+            if (trimmedLine === '' || trimmedLine.startsWith('#EXT-X-KEY')) return line;
 
-      res.writeHead(response.status, forwardHeaders);
-      res.end(finalManifest);
-      return;
+            const proxyWrap = (rawUrl: string) => {
+              try {
+                const resolvedUrl = new URL(rawUrl, baseUrl).href;
+                return `${proxyBaseUrl}?url=${encodeURIComponent(resolvedUrl)}&referer=${encodeURIComponent(referer || targetUrl)}`;
+              } catch (e) {
+                return rawUrl;
+              }
+            };
+
+            if (trimmedLine.startsWith('#')) {
+              return line.replace(/URI="(.*?)"/g, (match, p1) => {
+                return `URI="${proxyWrap(p1)}"`;
+              });
+            }
+
+            return proxyWrap(trimmedLine);
+          });
+
+          const finalManifest = rewrittenLines.join('\n');
+          forwardHeaders['Content-Length'] = Buffer.byteLength(finalManifest).toString();
+          delete forwardHeaders['Content-Encoding'];
+
+          res.writeHead(response.status, forwardHeaders);
+          res.end(finalManifest);
+          return;
+        } else {
+          // Fallback to direct stream for the remaining data
+          res.writeHead(response.status, forwardHeaders);
+          
+          // We need to send the chunks we already read
+          const combinedBuffer = Buffer.concat(chunks);
+          res.write(combinedBuffer);
+
+          // And pipe the rest
+          dataStream.pipe(res);
+          return;
+        }
+      } catch (err: any) {
+        console.error(`[Stream Proxy] Error processing manifest: ${err.message}`);
+        // If we fail during processing, try to pipe the rest if possible or just end
+        if (!res.headersSent) {
+          res.writeHead(response.status, forwardHeaders);
+          dataStream.pipe(res);
+        } else {
+          res.end();
+        }
+        return;
+      }
     }
 
     // For non-m3u8 streams (segments, mp4), keep compression if present and pipe directly
@@ -126,7 +178,9 @@ streamRoutes.get('/stream', async (req: Request, res: Response) => {
     response.data.pipe(res);
 
     req.on('close', () => {
-      console.log('[Stream Proxy] Client closed connection.');
+      if (!isSegment) {
+        console.log('[Stream Proxy] Client closed connection.');
+      }
       controller.abort();
       response.data.destroy();
     });
