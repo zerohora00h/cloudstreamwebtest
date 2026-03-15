@@ -3,4 +3,4 @@ dist
 _backup
 *.log
 .env
-server/data/
+server/data/*
