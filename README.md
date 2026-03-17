@@ -1,8 +1,5 @@
 # CloudStreamWeb
 
-> [!IMPORTANT]
-> **Aviso:** Este projeto foi apenas um teste e não terá mais atualizações.
-
 Versão web do CloudStream — plataforma de streaming baseada em plugins.
 
 ## ✨ Principais Funcionalidades
@@ -77,9 +74,3 @@ Plugins são **código que roda diretamente no seu computador**. Tome cuidado ao
 - 🚫 Desconfie de plugins que acessam arquivos do sistema, fazem downloads externos ou pedem permissões incomuns
 
 > **Na dúvida, peça para alguém da comunidade revisar o código antes de usar.**
-
-## ⚖️ DMCA / Isenção de Responsabilidade
-
-Este projeto tem caráter meramente educacional e funciona de forma semelhante a um navegador comum, apenas buscando arquivos de vídeo disponíveis publicamente na internet.
-
-Nenhum conteúdo é hospedado por este repositório. Qualquer conteúdo acessado é hospedado por sites de terceiros. O uso é de total responsabilidade do usuário, que deve cumprir as leis locais. Se você acredita que algum conteúdo viola direitos autorais, entre em contato diretamente com o provedor que hospeda os arquivos.
