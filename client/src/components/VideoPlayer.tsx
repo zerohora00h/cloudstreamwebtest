@@ -14,7 +14,7 @@ import {
   Volume2,
   VolumeX
 } from 'lucide-react';
-import { useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 
 interface VideoPlayerProps {
   url: string;
@@ -22,9 +22,10 @@ interface VideoPlayerProps {
   title?: string;
   poster?: string;
   onEnded?: () => void;
+  onSourceError?: () => void;
 }
 
-export default function VideoPlayer({ url, type, title, poster, onEnded }: VideoPlayerProps) {
+export default function VideoPlayer({ url, type, title, poster, onEnded, onSourceError }: VideoPlayerProps) {
   const videoRef = useRef<HTMLVideoElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const [isPlaying, setIsPlaying] = useState(false);
@@ -38,6 +39,18 @@ export default function VideoPlayer({ url, type, title, poster, onEnded }: Video
   const [showControls, setShowControls] = useState(true);
   const [copied, setCopied] = useState(false);
   const controlsTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const hasStartedPlayback = useRef(false);
+  const onSourceErrorRef = useRef(onSourceError);
+
+  // Keep ref in sync with latest callback to avoid stale closures
+  useEffect(() => {
+    onSourceErrorRef.current = onSourceError;
+  }, [onSourceError]);
+
+  // Reset playback flag when URL changes
+  useEffect(() => {
+    hasStartedPlayback.current = false;
+  }, [url]);
 
   useEffect(() => {
     const video = videoRef.current;
@@ -51,11 +64,11 @@ export default function VideoPlayer({ url, type, title, poster, onEnded }: Video
 
     // Detecção baseada no metadado 'type' ou na URL se não disponível
     const urlLower = url.toLowerCase();
-    
+
     // Prioridade para o 'type' explícito vindo do extrator/proxy
     const isMp4 = type === 'mp4' || (!type && (urlLower.includes('.mp4') || urlLower.includes('get_video')));
     const isHls = type === 'hls' || (!type && (urlLower.includes('.m3u8') || urlLower.includes('m3u8')));
-    
+
     // Tentamos HLS se for explicitamente HLS ou se não for explicitamente MP4 e HLS for suportado
     const shouldTryHls = isHls || (!isMp4 && Hls.isSupported());
 
@@ -73,6 +86,17 @@ export default function VideoPlayer({ url, type, title, poster, onEnded }: Video
       }
     };
 
+    // Trigger source error fallback if playback hasn't started yet
+    const triggerSourceError = (errorMsg: string) => {
+      if (!hasStartedPlayback.current && onSourceErrorRef.current) {
+        console.log('[VideoPlayer] Source failed before playback, triggering fallback');
+        onSourceErrorRef.current();
+      } else {
+        setError(errorMsg);
+        setIsLoading(false);
+      }
+    };
+
     if (shouldTryHls) {
       hls = new Hls({
         capLevelToPlayerSize: true,
@@ -80,7 +104,7 @@ export default function VideoPlayer({ url, type, title, poster, onEnded }: Video
       });
       hls.loadSource(url);
       hls.attachMedia(video);
-      
+
       hls.on(Hls.Events.MANIFEST_PARSED, () => {
         if (!isMounted) return;
         setIsLoading(false);
@@ -92,20 +116,19 @@ export default function VideoPlayer({ url, type, title, poster, onEnded }: Video
 
       hls.on(Hls.Events.ERROR, (_event, data) => {
         if (!isMounted) return;
-        
+
         if (data.fatal) {
           console.error('[VideoPlayer] HLS Fatal Error:', data.type, data.details);
-          
-          // Se for erro de rede ou de parsing no manifesto, tentamos fallback nativo
+
+          // If playback hasn't started, try native fallback first; if that also fails, triggerSourceError handles it
           if (data.type === Hls.ErrorTypes.NETWORK_ERROR || data.type === Hls.ErrorTypes.MEDIA_ERROR) {
-             console.log("[VideoPlayer] Attempting native fallback...");
-             hls?.destroy();
-             hls = null;
-             startNativePlayback();
-          } else {
-            setError('Falha crítica no carregamento do vídeo.');
-            setIsLoading(false);
+            console.log("[VideoPlayer] Attempting native fallback...");
             hls?.destroy();
+            hls = null;
+            startNativePlayback();
+          } else {
+            hls?.destroy();
+            triggerSourceError('Falha crítica no carregamento do vídeo.');
           }
         }
       });
@@ -194,7 +217,7 @@ export default function VideoPlayer({ url, type, title, poster, onEnded }: Video
       try {
         const bufferedEnd = videoRef.current.buffered.end(videoRef.current.buffered.length - 1);
         setLoadedProgress(bufferedEnd);
-      } catch (e) {}
+      } catch (e) { }
     }
   };
 
@@ -264,21 +287,27 @@ export default function VideoPlayer({ url, type, title, poster, onEnded }: Video
     }
   };
 
-  const handleVideoError = () => {
-    setError('Não foi possível carregar este vídeo. O link pode ter expirado ou o servidor está offline.');
-    setIsLoading(false);
-  };
+  const handleVideoError = useCallback(() => {
+    // Delegate to fallback if playback hasn't started, otherwise show error UI
+    if (!hasStartedPlayback.current && onSourceErrorRef.current) {
+      console.log('[VideoPlayer] Native playback failed before start, triggering fallback');
+      onSourceErrorRef.current();
+    } else {
+      setError('Não foi possível carregar este vídeo. O link pode ter expirado ou o servidor está offline.');
+      setIsLoading(false);
+    }
+  }, []);
 
   const handleCopyLink = () => {
     let finalUrl = url;
-    
+
     // Se a URL não começar com http (é relativa) ou não for do nosso proxy,
     // vamos garantir que ela seja o link do nosso proxy para funcionar externamente (CORS/Referer)
     if (!url.includes('/api/stream')) {
-        const proxyUrl = `/api/stream?url=${encodeURIComponent(url)}`;
-        finalUrl = window.location.origin + proxyUrl;
+      const proxyUrl = `/api/stream?url=${encodeURIComponent(url)}`;
+      finalUrl = window.location.origin + proxyUrl;
     } else if (url.startsWith('/')) {
-        finalUrl = window.location.origin + url;
+      finalUrl = window.location.origin + url;
     }
 
     navigator.clipboard.writeText(finalUrl).then(() => {
@@ -305,7 +334,7 @@ export default function VideoPlayer({ url, type, title, poster, onEnded }: Video
         onPlay={() => setIsPlaying(true)}
         onPause={() => setIsPlaying(false)}
         onWaiting={() => setIsLoading(true)}
-        onPlaying={() => setIsLoading(false)}
+        onPlaying={() => { setIsLoading(false); hasStartedPlayback.current = true; }}
         onEnded={onEnded}
         onError={handleVideoError}
         onClick={togglePlay}
@@ -371,7 +400,7 @@ export default function VideoPlayer({ url, type, title, poster, onEnded }: Video
           <div className="px-2 relative w-full flex items-center h-6 group/timeline cursor-pointer">
             {/* Custom Track and Buffer Bar */}
             <div className="absolute left-2 right-2 h-1 group-hover/timeline:h-2 bg-white/20 rounded-full overflow-hidden pointer-events-none transition-all duration-200">
-              <div 
+              <div
                 className="h-full bg-white/50 transition-all duration-300 ease-linear"
                 style={{ width: `${duration > 0 ? (loadedProgress / duration) * 100 : 0}%` }}
               />
