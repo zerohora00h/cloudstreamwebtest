@@ -11,6 +11,7 @@ import {
   RotateCcw,
   RotateCw,
   Settings,
+  Sun,
   Volume2,
   VolumeX
 } from 'lucide-react';
@@ -32,6 +33,7 @@ export default function VideoPlayer({ url, type, title, poster, onEnded }: Video
   const [duration, setDuration] = useState(0);
   const [volume, setVolume] = useState(1);
   const [isMuted, setIsMuted] = useState(false);
+  const [brightness, setBrightness] = useState(1);
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -298,6 +300,7 @@ export default function VideoPlayer({ url, type, title, poster, onEnded }: Video
     >
       <video
         ref={videoRef}
+        style={{ filter: `brightness(${brightness})` }}
         className="w-full h-full"
         onTimeUpdate={handleTimeUpdate}
         onProgress={handleProgress}
@@ -424,6 +427,25 @@ export default function VideoPlayer({ url, type, title, poster, onEnded }: Video
                     step={0.1}
                     value={isMuted ? 0 : volume}
                     onChange={handleVolumeChange}
+                    className="w-20"
+                  />
+                </div>
+              </div>
+
+              <div className="flex items-center gap-2 group/brightness">
+                <Button isIconOnly variant="light" size="sm" className="text-white" onPress={() => setBrightness(1)}>
+                  <Sun className="w-6 h-6" />
+                </Button>
+                <div className="w-0 group-hover/brightness:w-24 transition-all duration-300 overflow-hidden">
+                  <Slider
+                    aria-label="Brilho"
+                    size="sm"
+                    color="primary"
+                    maxValue={3}
+                    minValue={0}
+                    step={0.05}
+                    value={brightness}
+                    onChange={(val) => setBrightness(Array.isArray(val) ? val[0] : val)}
                     className="w-20"
                   />
                 </div>

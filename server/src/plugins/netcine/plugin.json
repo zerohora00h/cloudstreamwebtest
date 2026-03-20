@@ -1,0 +1,7 @@
+{
+  "id": "netcine",
+  "name": "NetCine",
+  "description": "Filmes e Séries do NetCine (nnn1.lat)",
+  "version": "1.0.0",
+  "main": "index.ts"
+}
