@@ -1,7 +1,7 @@
 import { Request, Response, Router } from 'express';
 import { ExtractorManager } from '../core/extractorManager';
 import { PluginRegistry } from '../core/pluginRegistry';
-import { getHomeCache, saveHomeCache, getSetting, getMediaCache, saveMediaCache } from '../utils/cacheRepo';
+import { getHomeCache, getMediaCache, getSetting, saveHomeCache, saveMediaCache } from '../utils/cacheRepo';
 
 export const pluginRoutes = Router();
 
@@ -159,7 +159,7 @@ pluginRoutes.post('/plugins/:id/load', async (req: Request, res: Response) => {
     const fetchFreshMedia = async () => {
       try {
         const freshData = await plugin.load(url);
-        
+
         if (isCacheEnabled && freshData) {
           saveMediaCache(pluginId, url, freshData);
         }
@@ -171,7 +171,7 @@ pluginRoutes.post('/plugins/:id/load', async (req: Request, res: Response) => {
     };
 
     if (cached) {
-      fetchFreshMedia().catch(() => {});
+      fetchFreshMedia().catch(() => { });
     } else {
       const freshData = await fetchFreshMedia();
       res.json(freshData);

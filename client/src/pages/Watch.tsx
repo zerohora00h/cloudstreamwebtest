@@ -9,14 +9,14 @@ import {
   Spinner
 } from '@heroui/react';
 import {
-  Server,
-  Tv,
-  Play,
   AlertCircle,
   ChevronLeft,
-  Loader2
+  Loader2,
+  Play,
+  Server,
+  Tv
 } from 'lucide-react';
-import { useEffect, useState, useRef, useCallback } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { useLocation, useNavigate, useSearchParams } from 'react-router-dom';
 import VideoPlayer from '../components/VideoPlayer';
 import { api, type Episode, type MediaDetails, type StreamLink } from '../services/api';
@@ -41,12 +41,13 @@ export default function Watch() {
   const [activeLink, setActiveLink] = useState<StreamLink | null>(null);
   const [loadingLinks, setLoadingLinks] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [fallbackMessage, setFallbackMessage] = useState<string | null>(null);
 
   const [mediaDetails, setMediaDetails] = useState<MediaDetails | null>(
     originalUrl ? detailsCache[originalUrl] || null : null
   );
   const [loadingDetails, setLoadingDetails] = useState(false);
-  
+
   const extractingRef = useRef<Set<string>>(new Set());
 
   // 1. Busca os links brutos (rápido)
@@ -88,25 +89,25 @@ export default function Watch() {
     if (extractingRef.current.has(linkToExtract.url)) return;
 
     extractingRef.current.add(linkToExtract.url);
-    
+
     // Atualiza status para extracting
     setLinks(prev => prev.map(l => l.url === linkToExtract.url ? { ...l, status: 'extracting' } : l));
     if (activeLink?.url === linkToExtract.url) {
-        setActiveLink(prev => prev ? { ...prev, status: 'extracting' } : null);
+      setActiveLink(prev => prev ? { ...prev, status: 'extracting' } : null);
     }
 
     try {
       const result = await api.extractLink(pluginId, linkToExtract);
       if (result && result.length > 0) {
         const extracted = { ...result[0], status: 'extracted' as const };
-        
+
         setLinks(prev => {
-            const index = prev.findIndex(l => l.url === linkToExtract.url);
-            if (index === -1) return prev;
-            
-            const newLinks = [...prev];
-            newLinks[index] = extracted;
-            return newLinks;
+          const index = prev.findIndex(l => l.url === linkToExtract.url);
+          if (index === -1) return prev;
+
+          const newLinks = [...prev];
+          newLinks[index] = extracted;
+          return newLinks;
         });
 
         setActiveLink(prev => prev?.url === linkToExtract.url ? extracted : prev);
@@ -129,15 +130,54 @@ export default function Watch() {
     if (loadingLinks || links.length === 0) return;
 
     if (activeLink && activeLink.status === 'raw') {
-        extractOne(activeLink);
-        return;
+      extractOne(activeLink);
+      return;
     }
 
     const nextInQueue = links.find(l => l.status === 'raw');
     if (nextInQueue) {
-        extractOne(nextInQueue);
+      extractOne(nextInQueue);
     }
   }, [links, activeLink, loadingLinks, extractOne]);
+
+  // Auto-fallback: when the player reports a source error before playback,
+  // advance to the next available extracted or raw link.
+  const handleSourceError = useCallback(() => {
+    setLinks(prev => {
+      const updated = prev.map(l =>
+        l.url === activeLink?.url ? { ...l, status: 'error' as const } : l
+      );
+
+      const failedName = activeLink?.name || 'Servidor';
+
+      // Find next link that is already extracted or still raw (will be extracted automatically)
+      const nextLink = updated.find(
+        l => l.url !== activeLink?.url && (l.status === 'extracted' || l.status === 'raw')
+      );
+
+      if (nextLink) {
+        console.log(`[Watch] Fallback: ${failedName} failed, advancing to ${nextLink.name}`);
+        setFallbackMessage(`Fonte "${failedName}" falhou. Tentando "${nextLink.name}"...`);
+        // Use setTimeout to avoid state update during render
+        setTimeout(() => setActiveLink(nextLink), 0);
+      } else {
+        console.log('[Watch] All sources exhausted, no fallback available');
+        setFallbackMessage(null);
+        setError('Todas as fontes falharam. Nenhum servidor disponível.');
+      }
+
+      return updated;
+    });
+  }, [activeLink]);
+
+  // Clear fallback message once a source plays successfully
+  useEffect(() => {
+    if (activeLink?.status === 'extracted') {
+      // Keep the message briefly so the user sees what happened, then clear
+      const timer = setTimeout(() => setFallbackMessage(null), 3000);
+      return () => clearTimeout(timer);
+    }
+  }, [activeLink]);
 
 
 
@@ -147,8 +187,8 @@ export default function Watch() {
 
     let fetchUrl = originalUrl;
     if (seasonParam && !fetchUrl.includes('requested_season')) {
-      fetchUrl = fetchUrl.includes('?') 
-        ? `${fetchUrl}&requested_season=${seasonParam}` 
+      fetchUrl = fetchUrl.includes('?')
+        ? `${fetchUrl}&requested_season=${seasonParam}`
         : `${fetchUrl}?requested_season=${seasonParam}`;
     }
 
@@ -161,7 +201,7 @@ export default function Watch() {
         const decodedUrl = decodeURIComponent(fetchUrl);
         const data = await api.load(pluginId, decodedUrl);
         if (isMounted) {
-          detailsCache[fetchUrl] = data; 
+          detailsCache[fetchUrl] = data;
           setMediaDetails(data);
         }
       } catch (err) {
@@ -225,6 +265,7 @@ export default function Watch() {
                 url={activeLink.url}
                 type={activeLink.type}
                 title={title}
+                onSourceError={handleSourceError}
               />
             ) : (
               <div className="w-full h-full flex flex-col items-center justify-center bg-zinc-900/50 backdrop-blur-sm gap-4">
@@ -237,26 +278,26 @@ export default function Watch() {
                 ) : (
                   <>
                     <div className="relative">
-                        <div className="w-20 h-20 rounded-full border-4 border-primary/20 border-t-primary animate-spin" />
-                        <Server className="w-8 h-8 text-primary absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2" />
+                      <div className="w-20 h-20 rounded-full border-4 border-primary/20 border-t-primary animate-spin" />
+                      <Server className="w-8 h-8 text-primary absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2" />
                     </div>
                     <div className="text-center space-y-1">
-                        <p className="text-xl font-bold text-white">
-                            {activeLink?.status === 'extracting' ? 'Extraindo link direto...' : 'Preparando servidor...'}
-                        </p>
-                        <p className="text-default-400 text-sm italic">
-                            {activeLink?.name} • {activeLink?.quality}
-                        </p>
+                      <p className="text-xl font-bold text-white">
+                        {activeLink?.status === 'extracting' ? 'Extraindo link direto...' : 'Preparando servidor...'}
+                      </p>
+                      <p className="text-default-400 text-sm italic">
+                        {activeLink?.name} • {activeLink?.quality}
+                      </p>
                     </div>
                   </>
                 )}
               </div>
             )}
-            
+
             {loadingLinks && (
-                <div className="absolute inset-0 z-50 flex flex-col items-center justify-center bg-black/60 backdrop-blur-md">
-                     <Spinner size="lg" color="primary" label="Buscando lista de servidores..." />
-                </div>
+              <div className="absolute inset-0 z-50 flex flex-col items-center justify-center bg-black/60 backdrop-blur-md">
+                <Spinner size="lg" color="primary" label="Buscando lista de servidores..." />
+              </div>
             )}
 
             {error && !loadingLinks && links.length === 0 && (
@@ -264,6 +305,16 @@ export default function Watch() {
                 <AlertCircle className="w-12 h-12 text-danger" />
                 <p className="text-lg font-medium">{error}</p>
                 <Button color="primary" variant="flat" onPress={() => navigate(-1)}>Voltar</Button>
+              </div>
+            )}
+
+            {/* Fallback progress indicator */}
+            {fallbackMessage && (
+              <div className="absolute bottom-4 left-4 right-4 z-50 animate-in slide-in-from-bottom duration-300">
+                <div className="bg-warning/10 border border-warning/30 backdrop-blur-md rounded-lg px-4 py-2 flex items-center gap-3">
+                  <Loader2 className="w-4 h-4 text-warning animate-spin shrink-0" />
+                  <p className="text-sm text-warning font-medium">{fallbackMessage}</p>
+                </div>
               </div>
             )}
           </div>
@@ -280,9 +331,9 @@ export default function Watch() {
             </div>
 
             <div className="flex gap-2">
-              <Chip 
-                variant="flat" 
-                size="sm" 
+              <Chip
+                variant="flat"
+                size="sm"
                 color={activeLink?.status === 'extracted' ? 'success' : 'warning'}
                 className="font-bold"
               >
@@ -323,13 +374,13 @@ export default function Watch() {
                   <ListboxItem
                     key={link.url}
                     description={
-                        <div className="flex items-center gap-2">
-                            <span>{link.quality}</span>
-                            <span className="text-[10px] opacity-50">•</span>
-                            <span className={`text-[10px] ${link.status === 'extracted' ? 'text-success' : link.status === 'error' ? 'text-danger' : 'text-default-400'}`}>
-                                {getLinkStatusText(link.status)}
-                            </span>
-                        </div>
+                      <div className="flex items-center gap-2">
+                        <span>{link.quality}</span>
+                        <span className="text-[10px] opacity-50">•</span>
+                        <span className={`text-[10px] ${link.status === 'extracted' ? 'text-success' : link.status === 'error' ? 'text-danger' : 'text-default-400'}`}>
+                          {getLinkStatusText(link.status)}
+                        </span>
+                      </div>
                     }
                     startContent={
                       <div className="flex items-center gap-2">
@@ -350,25 +401,25 @@ export default function Watch() {
               )}
             </CardBody>
           </Card>
-          
+
           {mediaDetails?.type === 'TvSeries' && mediaDetails.episodes && seasonParam && episodeParam && (
-             (() => {
-                const currentSeason = parseInt(seasonParam);
-                const currentEpisode = parseInt(episodeParam);
-                const nextEp = mediaDetails.episodes.find(ep => ep.season === currentSeason && ep.episode === currentEpisode + 1);
-                return nextEp ? (
-                    <Button
-                      color="secondary"
-                      variant="flat"
-                      fullWidth
-                      className="mt-6 py-6 flex flex-col items-center justify-center gap-1 h-auto border border-secondary/20 hover:bg-secondary/10"
-                      onPress={() => handlePlayEpisode(nextEp)}
-                    >
-                      <span className="text-[10px] uppercase font-bold tracking-widest opacity-70">Avançar para</span>
-                      <span className="font-bold text-sm">Próximo Episódio ({nextEp.episode})</span>
-                    </Button>
-                ) : null;
-             })()
+            (() => {
+              const currentSeason = parseInt(seasonParam);
+              const currentEpisode = parseInt(episodeParam);
+              const nextEp = mediaDetails.episodes.find(ep => ep.season === currentSeason && ep.episode === currentEpisode + 1);
+              return nextEp ? (
+                <Button
+                  color="secondary"
+                  variant="flat"
+                  fullWidth
+                  className="mt-6 py-6 flex flex-col items-center justify-center gap-1 h-auto border border-secondary/20 hover:bg-secondary/10"
+                  onPress={() => handlePlayEpisode(nextEp)}
+                >
+                  <span className="text-[10px] uppercase font-bold tracking-widest opacity-70">Avançar para</span>
+                  <span className="font-bold text-sm">Próximo Episódio ({nextEp.episode})</span>
+                </Button>
+              ) : null;
+            })()
           )}
 
           <div className="mt-6 p-4 rounded-xl bg-primary/5 border border-primary/10">
@@ -392,31 +443,31 @@ export default function Watch() {
             {mediaDetails.episodes
               .filter(ep => ep.season === parseInt(seasonParam || '1'))
               .map((ep, idx) => {
-              const isCurrent = data === ep.data;
-              return (
-                <Card
-                  key={idx}
-                  isPressable={!isCurrent}
-                  className={`border ${isCurrent ? 'bg-primary/20 border-primary shadow-lg shadow-primary/10' : 'bg-default-100/30 hover:bg-default-100/50 border-white/5'}`}
-                  onPress={() => !isCurrent && handlePlayEpisode(ep)}
-                >
-                  <CardBody className="py-3 px-4 flex flex-row items-center gap-3">
-                    <div className={`w-10 h-10 rounded-full flex items-center justify-center shrink-0 ${isCurrent ? 'bg-primary text-white' : 'bg-primary/20 text-primary'}`}>
-                      {isCurrent ? <Tv className="w-4 h-4" /> : <Play className="w-4 h-4 ml-1 fill-current" />}
-                    </div>
-                    <div className="flex-1 overflow-hidden text-left">
-                      <p className={`text-sm font-bold truncate ${isCurrent ? 'text-primary' : ''}`}>
-                        {ep.name}
-                      </p>
-                      <p className={`text-xs ${isCurrent ? 'text-primary-400' : 'text-default-400'}`}>
-                        Temp {ep.season} • {ep.episode > 0 ? `Ep ${ep.episode}` : 'Especial'}
-                        {isCurrent && ' (Reproduzindo)'}
-                      </p>
-                    </div>
-                  </CardBody>
-                </Card>
-              );
-            })}
+                const isCurrent = data === ep.data;
+                return (
+                  <Card
+                    key={idx}
+                    isPressable={!isCurrent}
+                    className={`border ${isCurrent ? 'bg-primary/20 border-primary shadow-lg shadow-primary/10' : 'bg-default-100/30 hover:bg-default-100/50 border-white/5'}`}
+                    onPress={() => !isCurrent && handlePlayEpisode(ep)}
+                  >
+                    <CardBody className="py-3 px-4 flex flex-row items-center gap-3">
+                      <div className={`w-10 h-10 rounded-full flex items-center justify-center shrink-0 ${isCurrent ? 'bg-primary text-white' : 'bg-primary/20 text-primary'}`}>
+                        {isCurrent ? <Tv className="w-4 h-4" /> : <Play className="w-4 h-4 ml-1 fill-current" />}
+                      </div>
+                      <div className="flex-1 overflow-hidden text-left">
+                        <p className={`text-sm font-bold truncate ${isCurrent ? 'text-primary' : ''}`}>
+                          {ep.name}
+                        </p>
+                        <p className={`text-xs ${isCurrent ? 'text-primary-400' : 'text-default-400'}`}>
+                          Temp {ep.season} • {ep.episode > 0 ? `Ep ${ep.episode}` : 'Especial'}
+                          {isCurrent && ' (Reproduzindo)'}
+                        </p>
+                      </div>
+                    </CardBody>
+                  </Card>
+                );
+              })}
           </div>
         </div>
       )}
