@@ -47,4 +47,4 @@ ENV PORT=8085
 RUN mkdir -p /app/server/data
 
 EXPOSE 8085
-CMD ["node", "server/dist/server.js"]
+CMD ["node", "server/dist/server/src/server.js"]
