@@ -108,13 +108,20 @@ const getLocalIp = () => {
 
 // Serve static files in production
 if (process.env.NODE_ENV === 'production') {
-  const clientPath = path.join(__dirname, '../../client/dist');
+  // Use process.cwd() to consistently point to /app/client/dist in Docker
+  const clientPath = path.join(process.cwd(), 'client/dist');
   app.use(express.static(clientPath));
   
   // SPA support: redirect all other requests to index.html
-  app.get('(.*)', (req, res, next) => {
+  // Express 5 / path-to-regexp v8 requires a named parameter for wildcards: /:path(.*)
+  app.get('/:path(.*)', (req, res, next) => {
     if (req.url.startsWith('/api')) return next();
-    res.sendFile(path.join(clientPath, 'index.html'));
+    const indexPath = path.join(clientPath, 'index.html');
+    if (fs.existsSync(indexPath)) {
+      res.sendFile(indexPath);
+    } else {
+      res.status(404).send('Frontend index.html not found');
+    }
   });
   
   console.log(`[Server] Production mode: Serving client from ${clientPath}`);
