@@ -113,15 +113,19 @@ if (process.env.NODE_ENV === 'production') {
   const clientPath = path.join(process.cwd(), 'client/dist');
   app.use(express.static(clientPath));
   
-  // SPA support: redirect all other requests to index.html
-  // Express 5 / path-to-regexp v8 requires a named parameter for wildcards: /:path(.*)
-  app.get('/:path(.*)', (req, res, next) => {
-    if (req.url.startsWith('/api')) return next();
+  // Fallback for SPA: If no API route matched, serve index.html
+  // This approach avoids path-to-regexp issues in Express 5
+  app.use((req, res, next) => {
+    // Don't intercept API calls (they should 404 if not found)
+    if (req.url.startsWith('/api')) {
+      return next();
+    }
+    
     const indexPath = path.join(clientPath, 'index.html');
     if (fs.existsSync(indexPath)) {
       res.sendFile(indexPath);
     } else {
-      res.status(404).send('Frontend index.html not found');
+      next();
     }
   });
   
