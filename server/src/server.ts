@@ -112,7 +112,7 @@ if (process.env.NODE_ENV === 'production') {
   app.use(express.static(clientPath));
   
   // SPA support: redirect all other requests to index.html
-  app.get('*', (req, res, next) => {
+  app.get('(.*)', (req, res, next) => {
     if (req.url.startsWith('/api')) return next();
     res.sendFile(path.join(clientPath, 'index.html'));
   });
