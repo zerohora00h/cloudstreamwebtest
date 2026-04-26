@@ -12,7 +12,6 @@ moduleAlias.addAliases({
 
 import cors from 'cors';
 import express from 'express';
-import fs from 'fs';
 import os from 'os';
 import { PluginRegistry } from './core/pluginRegistry';
 import { pluginRoutes } from './routes/plugins';
