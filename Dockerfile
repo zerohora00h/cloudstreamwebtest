@@ -23,6 +23,9 @@ RUN pnpm install --frozen-lockfile
 RUN pnpm run build:client
 RUN pnpm run build:server
 
+# Remove devDependencies to keep image small
+RUN pnpm prune --prod
+
 # Stage 3: Production
 FROM node:22-slim AS production
 WORKDIR /app

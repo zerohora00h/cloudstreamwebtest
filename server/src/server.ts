@@ -1,6 +1,4 @@
-if (process.env.NODE_ENV !== 'production') {
-  require('dotenv').config();
-}
+import 'dotenv/config';
 const moduleAlias = require('module-alias');
 const path = require('path');
 
