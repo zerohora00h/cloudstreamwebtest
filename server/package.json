@@ -14,10 +14,8 @@
     "better-sqlite3": "^12.8.0",
     "cheerio": "^1.2.0",
     "cors": "^2.8.6",
-    "dotenv": "^17.4.2",
     "express": "^5.2.1",
-    "module-alias": "^2.3.4",
-    "stremio-addon-sdk": "^1.6.10"
+    "module-alias": "^2.3.4"
   },
   "devDependencies": {
     "@types/better-sqlite3": "^7.6.13",

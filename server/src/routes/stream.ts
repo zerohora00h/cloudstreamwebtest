@@ -186,10 +186,6 @@ streamRoutes.get('/stream', async (req: Request, res: Response) => {
     });
 
     response.data.on('error', (err: any) => {
-      // Silencia erros comuns de cancelamento de conexão no streaming (comportamento normal do player)
-      const isCanceled = err.message === 'canceled' || err.code === 'ECONNRESET' || err.message?.includes('aborted');
-      if (isCanceled) return;
-      
       console.error(`[Stream Proxy] Stream pipe error: ${err.message}`);
       res.end();
     });
