@@ -18,4 +18,6 @@ services:
     environment:
       - NODE_ENV=production
       - PORT=8085
-      # Adicione outras variáveis de ambiente aqui (.env)
+    env_file:
+      - .env
+
