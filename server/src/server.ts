@@ -1,8 +1,8 @@
-const path = require('path');
-const moduleAlias = require('module-alias');
 if (process.env.NODE_ENV !== 'production') {
-  require('dotenv').config({ path: path.join(__dirname, '../.env') });
+  require('dotenv').config();
 }
+const moduleAlias = require('module-alias');
+const path = require('path');
 
 moduleAlias.addAliases({
   "@shared": path.join(__dirname, '../../shared'),
