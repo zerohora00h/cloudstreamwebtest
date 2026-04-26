@@ -1,3 +1,4 @@
+import 'dotenv/config';
 const moduleAlias = require('module-alias');
 const path = require('path');
 
@@ -9,19 +10,23 @@ moduleAlias.addAliases({
 
 import cors from 'cors';
 import express from 'express';
+import os from 'os';
 import { PluginRegistry } from './core/pluginRegistry';
 import { pluginRoutes } from './routes/plugins';
 import { streamRoutes } from './routes/stream';
 import { settingsRoutes } from './routes/settings';
+import { tmdbRoutes } from './routes/tmdb';
 import { initDB } from './utils/db';
+import { initStremioAddon } from './core/stremio';
 
 initDB();
+initStremioAddon();
 
 // Disable SSL verification for problematic streaming sites
 process.env.NODE_TLS_REJECT_UNAUTHORIZED = '0';
 
 const app = express();
-const PORT = process.env.PORT || 3001;
+const PORT = process.env.PORT || 8085;
 const BOOT_ID = Date.now().toString(); // ID único para esta sessão do servidor
 
 app.use(cors());
@@ -87,7 +92,38 @@ app.get('/api/config', (_req, res) => res.json({ bootId: BOOT_ID }));
 app.use('/api', pluginRoutes);
 app.use('/api', streamRoutes);
 app.use('/api', settingsRoutes);
+app.use('/api', tmdbRoutes);
+
+const getLocalIp = () => {
+  const interfaces = os.networkInterfaces();
+  for (const name of Object.keys(interfaces)) {
+    for (const iface of interfaces[name]!) {
+      if (iface.family === 'IPv4' && !iface.internal) return iface.address;
+    }
+  }
+  return 'localhost';
+};
+
+// Serve static files in production
+if (process.env.NODE_ENV === 'production') {
+  const clientPath = path.join(__dirname, '../../client/dist');
+  app.use(express.static(clientPath));
+  
+  // SPA support: redirect all other requests to index.html
+  app.get('*', (req, res, next) => {
+    if (req.url.startsWith('/api')) return next();
+    res.sendFile(path.join(clientPath, 'index.html'));
+  });
+  
+  console.log(`[Server] Production mode: Serving client from ${clientPath}`);
+}
+
 
 app.listen(PORT, () => {
-  console.log(`[Server] Running at http://localhost:${PORT}`);
+  console.log(`[Server] Local:   http://localhost:${PORT}`);
+  const networkAddress = getLocalIp();
+  const hostname = os.hostname().toLowerCase() + '.local';
+  
+  console.log(`[Server] Rede IP: http://${networkAddress}:${PORT}`);
+  console.log(`[Server] Host:    http://${hostname}:${PORT}`);
 });

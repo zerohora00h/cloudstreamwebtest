@@ -14,16 +14,27 @@ if %errorlevel% neq 0 (
     exit /b 1
 )
 
+:: Check if pnpm is installed
+where pnpm >nul 2>nul
+if %errorlevel% neq 0 (
+    echo ============================================
+    echo  pnpm nao encontrado!
+    echo  Instale rodando: npm install -g pnpm
+    echo ============================================
+    pause
+    exit /b 1
+)
+
 echo ============================================
 echo  CloudStreamWeb
 echo ============================================
 echo.
 
 :: Check if dependencies are installed
-if not exist "node_modules" (
-    echo [1/2] Instalando dependencias...
+if not exist "pnpm-lock.yaml" (
+    echo [1/2] Instalando dependencias com pnpm...
     echo.
-    call npm install
+    call pnpm install
     if %errorlevel% neq 0 (
         echo.
         echo Erro ao instalar dependencias!
@@ -44,4 +55,5 @@ echo ============================================
 echo.
 
 start http://localhost:5173
-npm run dev
+pnpm run dev
+

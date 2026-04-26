@@ -3,21 +3,24 @@
   "version": "2.0.0",
   "private": true,
   "description": "Web version of CloudStream - plugin-based streaming platform",
-  "workspaces": [
-    "client",
-    "server"
-  ],
   "scripts": {
-    "dev": "concurrently \"npm run dev:client\" \"npm run dev:server\"",
-    "dev:client": "cd client && npm run dev",
-    "dev:server": "cd server && npm run dev",
-    "build:client": "cd client && npm run build",
-    "build:server": "cd server && npm run build"
+    "dev": "concurrently \"pnpm dev:client\" \"pnpm dev:server\"",
+    "dev:client": "cd client && pnpm dev",
+    "dev:server": "cd server && pnpm dev",
+    "build:client": "cd client && pnpm build",
+    "build:server": "cd server && pnpm build"
   },
   "devDependencies": {
     "concurrently": "^9.2.1"
   },
   "dependencies": {
     "cheerio": "^1.2.0"
+  },
+  "pnpm": {
+    "onlyBuiltDependencies": [
+      "@heroui/shared-utils",
+      "better-sqlite3",
+      "esbuild"
+    ]
   }
 }
