@@ -30,14 +30,8 @@ RUN pnpm prune --prod
 FROM node:22-slim AS production
 WORKDIR /app
 
-# Copy production node_modules and built files
-COPY --from=build /app/package.json ./
-COPY --from=build /app/node_modules ./node_modules
-COPY --from=build /app/server/package.json ./server/
-COPY --from=build /app/server/dist ./server/dist
-COPY --from=build /app/server/node_modules ./server/node_modules
-COPY --from=build /app/client/dist ./client/dist
-COPY --from=build /app/shared ./shared
+# Copy the entire app from build stage to ensure all symlinks and dist files are preserved
+COPY --from=build /app /app
 
 # Environment variables
 ENV NODE_ENV=production
@@ -48,3 +42,4 @@ RUN mkdir -p /app/server/data
 
 EXPOSE 8085
 CMD ["node", "server/dist/server/src/server.js"]
+
