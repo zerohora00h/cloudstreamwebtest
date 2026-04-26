@@ -117,14 +117,8 @@ export class PluginRegistry {
 
       try {
         const manifest = JSON.parse(fs.readFileSync(manifestPath, 'utf8'));
-        let mainFile = manifest.main || 'index.js';
-        let mainPath = path.join(pluginPath, mainFile);
-
-        // In production/Docker, .ts files are compiled to .js
-        if (!fs.existsSync(mainPath) && mainFile.endsWith('.ts')) {
-          mainFile = mainFile.replace('.ts', '.js');
-          mainPath = path.join(pluginPath, mainFile);
-        }
+        const mainFile = manifest.main || 'index.js';
+        const mainPath = path.join(pluginPath, mainFile);
 
         if (!fs.existsSync(mainPath)) {
           console.warn(`[Plugin] Main file not found for ${entry.name}: ${mainFile}`);
